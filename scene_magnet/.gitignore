@@ -1,0 +1,11 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# 日志
+MUJOCO_LOG.TXT
+*.log
+
+# 评测中间结果
+saves/**/*.npz
+saves/**/evaluations.npz

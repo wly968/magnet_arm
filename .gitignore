@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 环境
+.env
+.venv
+env/
+venv/
+
+# IDE / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# MuJoCo 日志
+MUJOCO_LOG.TXT
+*.log
+
+# 训练日志（模型权重保留）
+saves/**/*.npz
+saves/**/evaluations.npz
+saves/**/*.csv
+
+# 沙箱/临时
+.acl-recovery/
+
+# 旧版本目录（本地保留，不入库）
+arm1/
+scene/
+
+# 实验目录里的旧模型备份与渲染图
+tools/retrain/*.zip
+tools/*.png
