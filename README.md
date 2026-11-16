@@ -5,6 +5,23 @@
 
 ![场景预览](docs/scene.png)
 
+## 一个回合的阶段截图
+
+| ① 取料 | ② 下抓 | ③ 抬起 |
+|:---:|:---:|:---:|
+| ![phase1](docs/phase1.png) | ![phase2](docs/phase2.png) | ![phase3](docs/phase3.png) |
+
+| ④ 转移 | ⑤ 放料（需静止） | ⑥ 回原位 |
+|:---:|:---:|:---:|
+| ![phase4](docs/phase4.png) | ![phase5](docs/phase5.png) | ![phase6](docs/phase6.png) |
+
+<details>
+<summary>训练场景（无贴图，渲染更快）</summary>
+
+![训练场景](docs/train_scene.png)
+
+</details>
+
 ## 结果
 
 | 环节 | 负责模型 | 判定阈值 | 实测成功率 |
