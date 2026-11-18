@@ -256,7 +256,8 @@ class ArmEnv(gym.Env):
         if self.phase == 0 and self.phase0_hold_tol > 0.0:
             q_err_hold = float(np.linalg.norm(self.data.qpos[self.arm_qpos_adr] - self.home_qpos))
             if q_err_hold < self.phase0_hold_tol:
-                action = (self.data.qpos[self.arm_qpos_adr] - self.home_ctrl) / self.ctrl_scale
+                # 固定住 home 目标（不要跟随当前姿态，否则会被重力一点点带下去）
+                action = (self.home_qpos - self.home_ctrl) / self.ctrl_scale
         self.prev_cmd = action.copy()
 
         if self.scripted_retract and self.phase == 3:
@@ -347,7 +348,7 @@ class ArmEnv(gym.Env):
                 self.phase = 2
                 info["final_phase"] = 2
                 # ↓ 第三个值：True = 到此结束回合，False = 继续 phase 2
-                return self._get_obs(), reward, False, False, info
+                return self._get_obs(), reward, True, False, info
 
         elif self.phase == 2:
             reward = -dist * 4.0 - (1.0 - angle1) ** 2 * 3.0 - action_change * 0.3 - 0.2
