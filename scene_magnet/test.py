@@ -131,18 +131,20 @@ def run_episode(env, models, stop_phase=None):
             break                       # 达到当前模型能跑到的阶段就停
         if terminated or truncated:
             break
-    return env.phase, steps + 1
+    return env.phase, steps + 1, int(env.wait_steps)
 
 
 def pre_run(env, models, target_phase, n=PRE_RUN_EPISODES):
     print(f"\n===== 预跑 {n} 局（无渲染，目标阶段 = {target_phase}）=====")
     counts = {i: 0 for i in range(8)}
     steps = []
+    waits = []
     t0 = time.time()
     for ep in range(n):
-        phase, n_steps = run_episode(env, models, stop_phase=target_phase)
+        phase, n_steps, n_wait = run_episode(env, models, stop_phase=target_phase)
         counts[phase] = counts.get(phase, 0) + 1
         steps.append(n_steps)
+        waits.append(n_wait)
         if (ep + 1) % 20 == 0:
             print(f"  已完成 {ep + 1}/{n}")
 
@@ -169,7 +171,9 @@ def pre_run(env, models, target_phase, n=PRE_RUN_EPISODES):
     print(f"  ➜ 当前稳定能力：已完成 {stage_desc.get(done_stage, done_stage)}")
     print(f"  达到目标阶段（phase >= {target_phase}） : {ok}")
     print(f"  成功率: {ok}/{n} = {100.0 * ok / n:.1f}%")
-    print(f"  平均步数: {np.mean(steps):.1f}")
+    eff = [max(0, s - w) for s, w in zip(steps, waits)]
+    print(f"  平均步数: {np.mean(steps):.1f}（含 phase 0 等待 {np.mean(waits):.1f} 步）")
+    print(f"  平均步数（不含等待）: {np.mean(eff):.1f}")
     print("=" * 44 + "\n")
 
 
