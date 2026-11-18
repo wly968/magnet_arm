@@ -197,9 +197,9 @@ def main():
     if args.no_viewer:
         return
 
-    with mujoco.viewer.launch_passive(env.model, env.data) as viewer:
-        viewer.show_left_ui = False
-        viewer.show_right_ui = False
+    with mujoco.viewer.launch_passive(env.model, env.data,
+                                      show_left_ui=False,
+                                      show_right_ui=False) as viewer:
         viewer.cam.distance = 2.5
         viewer.cam.elevation = -30
         viewer.cam.azimuth = 90
