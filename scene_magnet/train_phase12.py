@@ -25,7 +25,8 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback
 
-from envs.arm_env import ArmEnv, CurriculumCallback, PhaseTrackerCallback
+from envs.arm_env import (ArmEnv, CurriculumCallback, PhaseTrackerCallback,
+                          WaitAwareMonitor)
 
 N_ENVS = 24
 TOTAL_STEPS = 4000_000   # 1.5M 只够到 0.06 档，3M 才能到 0.04 档
@@ -36,7 +37,7 @@ EVAL_DIST, EVAL_ANGLE, EVAL_STILL = 0.03, 0.98, 2
 
 
 def make_env():
-    return Monitor(ArmEnv())
+    return WaitAwareMonitor(ArmEnv())
 
 
 if __name__ == "__main__":

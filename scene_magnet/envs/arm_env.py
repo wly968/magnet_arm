@@ -4,6 +4,7 @@ import mujoco
 import numpy as np
 import os
 from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.monitor import Monitor
 
 
 class CurriculumCallback(BaseCallback):
@@ -58,6 +59,18 @@ class PhaseTrackerCallback(BaseCallback):
                 print("=" * 50 + "\n")
                 self.counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0}
         return True
+
+
+class WaitAwareMonitor(Monitor):
+    """训练日志里的 ep_len 去掉 phase 0 的等待步数。"""
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = super().step(action)
+        episode = info.get("episode")
+        if episode is not None:
+            wait = int(info.get("wait_steps", 0))
+            episode["l"] = max(0, int(episode["l"]) - wait)
+        return obs, reward, terminated, truncated, info
 
 
 class ArmEnv(gym.Env):
@@ -133,7 +146,7 @@ class ArmEnv(gym.Env):
         self.cube_speed = 0.20                          # 带 A 输送速度 (m/s)，0 = 静止
         self.belt_dir = np.array([1.0, 0.0, 0.0])        # 带 A 沿 +x
         self.spawn_mode = "gauss"                      # "uniform" | "gauss" | "fixed"
-        self.spawn_x_range = (-1.160, -1.060)            # x：最左端小幅变化（10cm）
+        self.spawn_x_range = (-0.875, -0.775)            # x：带左端(-1.175)与抓取线(-0.475)中间，小幅变化
         self.spawn_x_mean = -1.110                       # 高斯分布均值
         self.spawn_x_std = 0.03                          # 高斯分布标准差（会裁剪到范围）
         self.spawn_x = -1.150                            # fixed 模式下的固定值
@@ -143,6 +156,15 @@ class ArmEnv(gym.Env):
         self.max_wait_steps = 900                        # phase 0 等待上限（不计入回合预算）
         self.wait_steps = 0
         self.box_vel = np.zeros(3)                       # 方块实际速度（观测用）
+        self.phase0_hold_tol = 0.06                      # phase 0：关节偏差小于此值时保持静止
+        # B 带输送 + 收集篮
+        self.beltB_dir = np.array([0.0, -1.0, 0.0])
+        self.beltB_speed = 0.8                           # 放料后方块沿 B 带滑向篮子
+        self.beltB_end_y = -1.18                         # 超过此位置视为进入篮子
+        self.basket_pos = np.array([0.65, -1.34, 0.375])
+        self.collect_after_place = True
+        self.released = False
+        self.collected = False
         self.prev_cmd = np.zeros(4, dtype=np.float64)
         self.phase_entry_steps = 0   # 阶段切换后的强平滑步数
 
@@ -200,6 +222,8 @@ class ArmEnv(gym.Env):
         spawn_y = float(self.spawn_y) if self.spawn_mode == "fixed" else float(self.np_random.uniform(*self.spawn_y_range))
         self.box_pos = np.array([spawn_x, spawn_y, 0.375])
         self.attached = False
+        self.released = False
+        self.collected = False
         if self.mocap_id >= 0:
             self.data.mocap_pos[self.mocap_id] = self.box_pos
             self.data.mocap_quat[self.mocap_id] = [1.0, 0.0, 0.0, 0.0]   # 保持竖直
@@ -230,6 +254,12 @@ class ArmEnv(gym.Env):
             self.phase_entry_steps -= 1
         if alpha > 0.0:
             action = alpha * self.prev_cmd + (1.0 - alpha) * action
+
+        # phase 0：已经接近初始姿态时锁住，避免原地抽搐
+        if self.phase == 0 and self.phase0_hold_tol > 0.0:
+            q_err_hold = float(np.linalg.norm(self.data.qpos[self.arm_qpos_adr] - self.home_qpos))
+            if q_err_hold < self.phase0_hold_tol:
+                action = (self.data.qpos[self.arm_qpos_adr] - self.home_ctrl) / self.ctrl_scale
         self.prev_cmd = action.copy()
 
         if self.scripted_retract and self.phase == 3:
@@ -240,9 +270,16 @@ class ArmEnv(gym.Env):
 
         prev_box = self.box_pos.copy()
 
-        # 未锁定：方块沿带 A 匀速前进（运动学）
-        if not self.attached and self.cube_speed > 0.0 and self.mocap_id >= 0:
-            dt = self.model.opt.timestep * 5
+        dt = self.model.opt.timestep * 5
+        if self.released and not self.collected and self.mocap_id >= 0:
+            # 放到 B 带后：沿 -y 滑向收集篮
+            mp = self.data.mocap_pos[self.mocap_id]
+            mp[:] = mp + self.beltB_dir * self.beltB_speed * dt
+            if mp[1] <= self.beltB_end_y:
+                self.data.mocap_pos[self.mocap_id] = self.basket_pos
+                self.collected = True
+        elif not self.attached and self.cube_speed > 0.0 and self.mocap_id >= 0:
+            # 未释放：方块沿带 A 匀速前进（运动学）
             mp = self.data.mocap_pos[self.mocap_id]
             mp[:] = mp + self.belt_dir * self.cube_speed * dt
 
@@ -265,7 +302,8 @@ class ArmEnv(gym.Env):
         if np.isnan(self.data.qacc).any():
             return self._get_obs(), -10.0, True, False, {"nan": True, "final_phase": self.phase}
 
-        info = {"final_phase": self.phase}
+        info = {"final_phase": self.phase, "wait_steps": self.wait_steps,
+                "collected": bool(self.collected)}
         self.box_pos = self.data.xpos[self.box_body_id].copy()
         if self.mocap_id >= 0:
             self.box_pos = self.data.mocap_pos[self.mocap_id].copy()
@@ -360,7 +398,8 @@ class ArmEnv(gym.Env):
             if in_pos and self.still_count >= self.still_count_threshold:
                 reward += 60.0
                 self.phase = 6
-                self.attached = False        # 放下：方块解锁，停在原地
+                self.attached = False        # 放下：方块解锁
+                self.released = True         # 交给 B 带，滑向收集篮
                 info["final_phase"] = 6
                 if self.max_phase <= 6:          # 只训到放料：此处即成功终止
                     info["success"] = True
@@ -368,15 +407,18 @@ class ArmEnv(gym.Env):
                 return self._get_obs(), reward, False, truncated, info
 
         else:
-            # phase 6：回到初始位置（按关节角与 home 的偏差判定）
+            # phase 6：回到初始位置；若开启收集，需等方块进入篮子
             q_err = float(np.linalg.norm(self.data.qpos[self.arm_qpos_adr] - self.home_qpos))
             reward = -q_err * 2.0 - action_change * 0.3
             if q_err < self.home_tol:
-                reward += 60.0
-                self.phase = 7
-                info["final_phase"] = 7
-                info["success"] = True
-                return self._get_obs(), reward, True, False, info
+                if self.collected or not self.collect_after_place:
+                    reward += 60.0
+                    self.phase = 7
+                    info["final_phase"] = 7
+                    info["success"] = True
+                    info["collected"] = bool(self.collected)
+                    return self._get_obs(), reward, True, False, info
+                reward += 0.5          # 保持初始位，等方块入篮
 
         return self._get_obs(), reward, False, truncated, info
 
