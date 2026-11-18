@@ -1,19 +1,20 @@
-"""三模型接力可视化测试。
+"""可视化测试：根据已训练好的模型，自动选择能跑到哪一阶段。
 
-phase 1/2 : ppo_arm_reach.zip        （取料 + 下抓）
-phase 3-5 : saves/phase34_retract.zip（抬起原语 + 转移 + 放料，放料要求静止）
-phase 6   : saves/phase6_home.zip    （回到初始位置）
+三种模式（自动判断，也可用 --only 强制）：
+  phase12 ：只有 model1             → 跑 phase 0/1/2，phase 2 成功后结束
+  phase125：model1 + model2         → 跑到放料完成（phase 6）
+  full    ：model1 + model2 + model3 → 全流程（回初始位，phase 7）
 
-方块是 mocap 体：phase 2 成功后锁定到末端下方 6cm（顶面离圆盘约 1cm，姿态始终竖直），
-phase 5 成功（放料且静止）后解锁，方块停在原地。
-环境用 terminate_on_phase2=False，phase 2 成功后继续走到后续阶段。
-阶段阈值：
-  phase 1/2 : dist 0.03 / angle 0.98 / 静止 1
-  phase 3-5 : dist 0.05 / angle 0.945 / 静止 1（放料必须静止）
-  phase 6   : dist 0.06 / angle 0.94
+模型文件按候选列表自动查找；观测维度不一致时自动裁剪/补零并提示。
+方块是 mocap 体：phase 2 成功后锁定到末端下方 6cm（保持竖直），phase 5 成功后解锁。
 
-运行：python test.py
+运行：
+    python test.py                 # 自动模式
+    python test.py --only 12       # 只测 phase 1/2
+    python test.py --episodes 200  # 预跑局数
+    python test.py --no-viewer     # 只跑统计，不开窗口
 """
+import argparse
 import os
 import sys
 import time
@@ -28,27 +29,66 @@ sys.path.append(HERE)
 
 from envs.arm_env import ArmEnv
 
-PRE_RUN_EPISODES = 100
+# 候选文件（按顺序找第一个存在的）
+CANDIDATES = {
+    "model1": ["ppo_arm_reach.zip", os.path.join("saves", "phase1.zip"),
+               os.path.join("saves", "phase2.zip")],
+    "model2": [os.path.join("saves", "phase34_retract.zip")],
+    "model3": [os.path.join("saves", "phase6_home.zip")],
+}
 
-MODEL1 = os.path.join(HERE, "ppo_arm_reach.zip")
-MODEL2 = os.path.join(HERE, "saves", "phase34_retract.zip")
-MODEL3 = os.path.join(HERE, "saves", "phase6_home.zip")
-
+# 每个阶段用的 (dist, angle, still)
 TH_PHASE12 = (0.03, 0.98, 1)
 TH_PHASE35 = (0.05, 0.945, 1)
 TH_PHASE6 = (0.06, 0.94, 0)
 
+PRE_RUN_EPISODES = 100
 
-def load_models(env):
-    models = []
-    for name, path in (("model1", MODEL1), ("model2", MODEL2), ("model3", MODEL3)):
-        if os.path.exists(path):
-            models.append(PPO.load(path, env=env, device="cpu"))
-            print(f"✅ {name}: {os.path.basename(path)}")
-        else:
-            print(f"⚠️  缺少 {os.path.basename(path)}")
-            models.append(None)
-    return models
+
+class ObsAdapter:
+    """观测维度不一致时：多则裁剪，少则末尾补零。"""
+
+    def __init__(self, model, dim):
+        self.model = model
+        self.dim = int(model.observation_space.shape[0])
+        self.target_dim = dim
+
+    def predict(self, obs, deterministic=True):
+        o = np.asarray(obs, dtype=np.float32)
+        if o.shape[-1] > self.dim:
+            o = o[..., : self.dim]
+        elif o.shape[-1] < self.dim:
+            pad = np.zeros(o.shape[:-1] + (self.dim - o.shape[-1],), dtype=np.float32)
+            o = np.concatenate([o, pad], axis=-1)
+        return self.model.predict(o, deterministic=deterministic)
+
+
+def find_model(name, override=None):
+    if override is not None:
+        p = override if os.path.isabs(override) else os.path.join(HERE, override)
+        return p if os.path.exists(p) else None
+    for rel in CANDIDATES[name]:
+        p = rel if os.path.isabs(rel) else os.path.join(HERE, rel)
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def load_model(path, env_dim, label):
+    if path is None:
+        return None
+    try:
+        m = PPO.load(path, device="cpu")
+    except Exception as exc:
+        print(f"⚠️  {label} 加载失败（{os.path.basename(path)}）：{exc}")
+        return None
+    dim = int(m.observation_space.shape[0])
+    if dim != env_dim:
+        how = "裁剪多余维度" if dim > env_dim else "末尾补零"
+        print(f"⚠️  {label} 观测 {dim} 维，环境 {env_dim} 维 → 自动{how}")
+        m = ObsAdapter(m, env_dim)
+    print(f"✅ {label}: {os.path.basename(path)}")
+    return m
 
 
 def pick_policy(models, phase):
@@ -71,65 +111,110 @@ def apply_thresholds(env, phase, entry=False):
     env._set_angle1(a)
     env._set_still_count(s)
     if entry:
-        env.phase_entry_steps = 6     # 切换阶段后 6 步强平滑，压掉“勾一下”
+        env.phase_entry_steps = 6
 
 
 def run_episode(env, models):
     obs, _ = env.reset()
     apply_thresholds(env, env.phase)
-    success = False
     last_phase = env.phase
-    t = 0
-    for t in range(env.max_steps):
+    steps = 0
+    limit = env.max_steps + env.max_wait_steps + 10
+    for steps in range(limit):
         if env.phase != last_phase:
             apply_thresholds(env, env.phase, entry=True)
         last_phase = env.phase
         policy = pick_policy(models, env.phase)
         action, _ = policy.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
-        success = success or bool(info.get("success"))
         if terminated or truncated:
             break
-    return env.phase, success, t + 1
+    return env.phase, steps + 1
 
 
-def pre_run(env, models, n=PRE_RUN_EPISODES):
-    print(f"\n===== 预跑 {n} 局（无渲染）=====")
-    counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0}
+def pre_run(env, models, target_phase, n=PRE_RUN_EPISODES):
+    print(f"\n===== 预跑 {n} 局（无渲染，目标阶段 = {target_phase}）=====")
+    counts = {i: 0 for i in range(8)}
     steps = []
     t0 = time.time()
     for ep in range(n):
-        phase, success, n_steps = run_episode(env, models)
+        phase, n_steps = run_episode(env, models)
         counts[phase] = counts.get(phase, 0) + 1
         steps.append(n_steps)
         if (ep + 1) % 20 == 0:
             print(f"  已完成 {ep + 1}/{n}")
 
-    ok = counts.get(7, 0)
-    print(f"\n===== 预跑结果（{n} 局，用时 {time.time() - t0:.1f}s）=====")
-    print(f"  停在 phase 1（没到取料点）    : {counts.get(1, 0)}")
-    print(f"  停在 phase 2（没夹到位）      : {counts.get(2, 0)}")
-    print(f"  停在 phase 3（抬起失败）      : {counts.get(3, 0)}")
-    print(f"  停在 phase 4（没到中间姿态）  : {counts.get(4, 0)}")
-    print(f"  停在 phase 5（没放好/没静止） : {counts.get(5, 0)}")
-    print(f"  停在 phase 6（没回到初始位）  : {counts.get(6, 0)}")
-    print(f"  全流程完成（final_phase=7）   : {counts.get(7, 0)}")
-    print(f"  全流程成功率: {ok}/{n} = {100.0 * ok / n:.1f}%")
+    ok = sum(c for p, c in counts.items() if p >= target_phase)
+    labels = {
+        0: "停在 phase 0（等待超时）",
+        1: "停在 phase 1（没到取料点）",
+        2: "停在 phase 2（没夹到位）",
+        3: "停在 phase 3（抬起失败）",
+        4: "停在 phase 4（没到中间姿态）",
+        5: "停在 phase 5（没放好/没静止）",
+        6: "停在 phase 6（没回到初始位）",
+    }
+    # 最终停在 phase p 表示“p 没完成”，所以完成的最后阶段是 p-1
+    stage_desc = {-1: "尚未完成任何阶段", 0: "等待（phase 0）", 1: "取料（phase 1）",
+                  2: "下抓（phase 2）", 3: "抬起（phase 3）", 4: "中间姿态（phase 4）",
+                  5: "放料（phase 5）", 6: "回原位（phase 6）"}
+    stuck = max([p for p in range(8) if counts.get(p, 0) * 2 >= n], default=0)
+    done_stage = stuck - 1
+    print(f"\n===== 结果（{n} 局，用时 {time.time() - t0:.1f}s）=====")
+    for p in range(7):
+        if counts.get(p):
+            print(f"  {labels[p]:30s}: {counts[p]}")
+    print(f"  ➜ 当前稳定能力：已完成 {stage_desc.get(done_stage, done_stage)}")
+    print(f"  达到目标阶段（phase >= {target_phase}） : {ok}")
+    print(f"  成功率: {ok}/{n} = {100.0 * ok / n:.1f}%")
     print(f"  平均步数: {np.mean(steps):.1f}")
     print("=" * 44 + "\n")
 
 
 def main():
-    env = ArmEnv(terminate_on_phase2=False)
-    env.smooth_alpha = 0.5      # 动作低通滤波，抑制转移段的勾动作
-    print("obs", env.observation_space.shape, "action", env.action_space.shape)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--m1", default=None, help="model1 路径")
+    ap.add_argument("--m2", default=None, help="model2 路径")
+    ap.add_argument("--m3", default=None, help="model3 路径")
+    ap.add_argument("--only", choices=["12", "125", "full"], default=None,
+                    help="强制只跑到指定阶段")
+    ap.add_argument("--episodes", type=int, default=PRE_RUN_EPISODES)
+    ap.add_argument("--no-viewer", action="store_true")
+    ap.add_argument("--target", type=int, default=None,
+                    help="手动指定目标阶段（默认按可用模型自动）")
+    args = ap.parse_args()
 
-    models = load_models(env)
-    if models[0] is None:
-        print("❌ 缺少 ppo_arm_reach.zip")
+    p1 = find_model("model1", args.m1)
+    p2 = None if args.only in ("12",) else find_model("model2", args.m2)
+    p3 = None if args.only in ("12", "125") else find_model("model3", args.m3)
+
+    if p1 is None:
+        print("❌ 没有可用模型：需要 ppo_arm_reach.zip 或 saves/phase1.zip")
         return
 
-    pre_run(env, models, PRE_RUN_EPISODES)
+    if p2 is None:
+        env = ArmEnv(terminate_on_phase1=False, terminate_on_phase2=True, max_phase=3)
+        target, mode = 3, "phase 1/2（只有 model1）"
+    elif p3 is None:
+        env = ArmEnv(terminate_on_phase1=False, terminate_on_phase2=False, max_phase=6)
+        target, mode = 6, "phase 1-5（model1 + model2）"
+    else:
+        env = ArmEnv(terminate_on_phase1=False, terminate_on_phase2=False)
+        target, mode = 7, "全流程（三模型）"
+    env.smooth_alpha = 0.5
+
+    print(f"\n模式：{mode}")
+    print(f"obs {env.observation_space.shape}  action {env.action_space.shape}\n")
+    env_dim = env.observation_space.shape[0]
+    models = [load_model(p1, env_dim, "model1"),
+              load_model(p2, env_dim, "model2"),
+              load_model(p3, env_dim, "model3")]
+
+    if args.target is not None:
+        target = args.target
+    pre_run(env, models, target, args.episodes)
+    if args.no_viewer:
+        return
 
     with mujoco.viewer.launch_passive(env.model, env.data) as viewer:
         viewer.show_left_ui = False
@@ -159,8 +244,8 @@ def main():
             if terminated or truncated:
                 if info.get("nan"):
                     status = "💥 物理爆炸 (NaN)"
-                elif info.get("success"):
-                    status = "🎯 全流程成功"
+                elif env.phase >= target:
+                    status = "🎯 达到目标阶段"
                 elif truncated:
                     status = "⏱️ 超时"
                 else:

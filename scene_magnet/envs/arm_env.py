@@ -15,7 +15,7 @@ class CurriculumCallback(BaseCallback):
         (500_000,   0.042, 0.958, 1),
         (800_000,   0.038, 0.965, 1),
         (1_100_000, 0.034, 0.972, 2),
-        (1_400_000, 0.030, 0.980, 2),   # 终点档：实测 300/300
+        (1_400_000, 0.030, 0.980, 2),
     ]
 
     def __init__(self, verbose=0):
@@ -63,15 +63,16 @@ class PhaseTrackerCallback(BaseCallback):
 class ArmEnv(gym.Env):
     """phase 1/2 机械臂任务。
 
-    phase 1: 到方块上方 15cm（跟随方块刷新位置）
-    phase 2: 下压到方块上方 6cm，满足 dist/angle（+静止）即成功
+    phase 0: 等待方块沿带走到取料位置（手臂保持初始位）
+    phase 1: 到方块上方 15cm
+    phase 2: 下压到方块上方约 6cm，满足 dist/angle 即成功（抓取）
 
-    phase2_reward_mode:
-      "legacy" —— phase2.zip 训练时的原始奖励结构（推荐）
-      "shaped" —— 额外加 delta 距离塑形、静止奖励、碰撞惩罚
+    terminate_on_phase1:
+      True  —— 把 phase 1 当独立任务：+60 并结束（用于单独训 phase 1）
+      False —— 作为完整流程的一段：+30 继续（用于训 phase 1→2 连贯策略）
     """
 
-    def __init__(self, phase2_reward_mode="legacy", terminate_on_phase2=True, max_phase=7):
+    def __init__(self, terminate_on_phase1=True, terminate_on_phase2=True, max_phase=7):
         super().__init__()
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         xml_path = os.path.join(base_dir, "assets", "models", "train_scene.xml")
@@ -83,7 +84,7 @@ class ArmEnv(gym.Env):
         self.home_ctrl = np.array([1.57, -1.15, 2.0, 0.725], dtype=np.float64)
         self.ctrl_scale = np.array([3.0, 1.0, 1.0, 1.0], dtype=np.float64)
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(18,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(19,), dtype=np.float32
         )
 
         # 目标点
@@ -101,11 +102,9 @@ class ArmEnv(gym.Env):
         self.vel_threshold = 0.15
         self.home_tol = 0.15   # phase 6 判定：关节角与 home 的偏差
 
-        self.phase2_reward_mode = phase2_reward_mode
+        self.terminate_on_phase1 = terminate_on_phase1
         self.terminate_on_phase2 = terminate_on_phase2
         self.max_phase = max_phase
-        self.prev_dist = None
-        self.collision_penalty_value = 10.0
         self.cube_hit = False
         # 抓后抬起：由环境确定性执行，训练/测试一致，避免策略在交接处“勾一下”
         self.scripted_retract = True
@@ -129,6 +128,21 @@ class ArmEnv(gym.Env):
         self.attached = False       # phase2 后锁定到末端，phase5 后解锁
         self.carry_offset = 0.06
         self.smooth_alpha = 0.0      # >0 时对动作做低通滤波，抑制“勾一下”
+
+        # 传送带运动 + phase 0 等待
+        self.cube_speed = 0.20                          # 带 A 输送速度 (m/s)，0 = 静止
+        self.belt_dir = np.array([1.0, 0.0, 0.0])        # 带 A 沿 +x
+        self.spawn_mode = "gauss"                      # "uniform" | "gauss" | "fixed"
+        self.spawn_x_range = (-1.160, -1.060)            # x：最左端小幅变化（10cm）
+        self.spawn_x_mean = -1.110                       # 高斯分布均值
+        self.spawn_x_std = 0.03                          # 高斯分布标准差（会裁剪到范围）
+        self.spawn_x = -1.150                            # fixed 模式下的固定值
+        self.spawn_y_range = (0.440, 0.860)              # y：覆盖带面宽度约 84%（0.42/0.50）
+        self.spawn_y = 0.650                             # fixed 模式下的固定 y
+        self.arrive_x = -0.475                           # 原刷新区最左端：到达后进入 phase 1
+        self.max_wait_steps = 900                        # phase 0 等待上限（不计入回合预算）
+        self.wait_steps = 0
+        self.box_vel = np.zeros(3)                       # 方块实际速度（观测用）
         self.prev_cmd = np.zeros(4, dtype=np.float64)
         self.phase_entry_steps = 0   # 阶段切换后的强平滑步数
 
@@ -155,6 +169,8 @@ class ArmEnv(gym.Env):
         return np.clip(a, -1.0, 1.0)
 
     def _target(self):
+        if self.phase == 0:            # 等待：保持在初始位
+            return self.home_ee
         if self.phase == 1:            # 取料点（悬停）
             return self.box_pos + self.pick_offset
         if self.phase == 2:            # 下抓
@@ -173,22 +189,30 @@ class ArmEnv(gym.Env):
         key_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_KEY, "home")
         mujoco.mj_resetDataKeyframe(self.model, self.data, key_id)
 
-        box_x = self.np_random.uniform(-0.5 + 0.025, 0.25 - 0.025)
-        box_y = self.np_random.uniform(0.45 + 0.025, 0.85 - 0.025)
-        self.box_pos = np.array([box_x, box_y, 0.375])
+        # 生成点：在线随机 / 高斯 / 固定
+        if self.spawn_mode == "fixed":
+            spawn_x = self.spawn_x
+        elif self.spawn_mode == "gauss":
+            lo, hi = self.spawn_x_range
+            spawn_x = float(np.clip(self.np_random.normal(self.spawn_x_mean, self.spawn_x_std), lo, hi))
+        else:  # uniform
+            spawn_x = float(self.np_random.uniform(*self.spawn_x_range))
+        spawn_y = float(self.spawn_y) if self.spawn_mode == "fixed" else float(self.np_random.uniform(*self.spawn_y_range))
+        self.box_pos = np.array([spawn_x, spawn_y, 0.375])
         self.attached = False
         if self.mocap_id >= 0:
             self.data.mocap_pos[self.mocap_id] = self.box_pos
             self.data.mocap_quat[self.mocap_id] = [1.0, 0.0, 0.0, 0.0]   # 保持竖直
         mujoco.mj_forward(self.model, self.data)
 
+        self.box_vel = self.belt_dir * self.cube_speed
         self.home_ee = self.data.site_xpos[self.ee_id].copy()
         self.home_qpos = self.data.qpos[self.arm_qpos_adr].copy()
         self.steps = 0
-        self.phase = 1
+        self.wait_steps = 0
+        self.phase = 0            # phase 0：方块还没到，手臂在初始位等待
         self.still_count = 0
         self.prev_cmd = np.zeros(4, dtype=np.float64)
-        self.prev_dist = None
         self.retract_steps = 0
         self.prev_action = np.zeros(4, dtype=np.float64)
         self.prev_action2 = np.zeros(4, dtype=np.float64)
@@ -214,19 +238,29 @@ class ArmEnv(gym.Env):
             if self.retract_steps > 60:          # 卡住时兜底，避免死循环
                 self.phase = 4
 
+        prev_box = self.box_pos.copy()
+
+        # 未锁定：方块沿带 A 匀速前进（运动学）
+        if not self.attached and self.cube_speed > 0.0 and self.mocap_id >= 0:
+            dt = self.model.opt.timestep * 5
+            mp = self.data.mocap_pos[self.mocap_id]
+            mp[:] = mp + self.belt_dir * self.cube_speed * dt
+
         # 锁定期间：方块跟随末端，姿态保持竖直
         if self.attached and self.mocap_id >= 0:
             ee_now = self.data.site_xpos[self.ee_id]
-            self.data.mocap_pos[self.mocap_id] = [float(ee_now[0]),
-                                                  float(ee_now[1]),
-                                                  float(ee_now[2]) - self.carry_offset]
+            self.data.mocap_pos[self.mocap_id] = [float(ee_now[0]),float(ee_now[1]),float(ee_now[2]) - self.carry_offset]
             self.data.mocap_quat[self.mocap_id] = [1.0, 0.0, 0.0, 0.0]
 
         self.data.ctrl[:] = self.home_ctrl + action * self.ctrl_scale
         mujoco.mj_step(self.model, self.data, 5)
 
-        self.steps += 1
-        truncated = self.steps >= self.max_steps
+        if self.phase == 0:
+            self.wait_steps += 1
+            truncated = self.wait_steps >= self.max_wait_steps
+        else:
+            self.steps += 1
+            truncated = self.steps >= self.max_steps
 
         if np.isnan(self.data.qacc).any():
             return self._get_obs(), -10.0, True, False, {"nan": True, "final_phase": self.phase}
@@ -235,6 +269,8 @@ class ArmEnv(gym.Env):
         self.box_pos = self.data.xpos[self.box_body_id].copy()
         if self.mocap_id >= 0:
             self.box_pos = self.data.mocap_pos[self.mocap_id].copy()
+        dt_step = self.model.opt.timestep * 5
+        self.box_vel = (self.box_pos - prev_box) / max(dt_step, 1e-9)
         ee_pos = self.data.site_xpos[self.ee_id].copy()
         target_pos = self._target()
         dist = float(min(np.linalg.norm(ee_pos - target_pos), 1.0))
@@ -259,55 +295,37 @@ class ArmEnv(gym.Env):
                 self.cube_hit = True
                 break
 
-        if self.phase == 1:
+        if self.phase == 0:
+            # 等待阶段：与 phase 6 同款“回到初始姿态”奖励
+            q_err = float(np.linalg.norm(self.data.qpos[self.arm_qpos_adr] - self.home_qpos))
+            reward = -q_err * 2.0 - action_change * 0.3
+            if float(self.box_pos[0]) >= self.arrive_x:      # 方块到达原刷新点最左端
+                reward += 10.0
+                self.phase = 1
+                info["final_phase"] = 1
+                return self._get_obs(), reward, False, truncated, info
+
+        elif self.phase == 1:
             reward = -dist * 4.0 - (1.0 - angle1) ** 2 * 3.0 - action_change * 0.3
             if dist < self.dist_threshold and angle1 > self.angle1_threshold:
-                reward += 30.0
+                # terminate_on_phase1=True：把 phase 1 当成独立任务（+60 并结束）
+                # False：作为完整流程的一段（+30，继续到 phase 2）
+                reward += 60.0 if self.terminate_on_phase1 else 30.0
                 self.phase = 2
-                self.prev_dist = None
                 info["final_phase"] = 2
-                return self._get_obs(), reward, False, False, info
+                return self._get_obs(), reward, self.terminate_on_phase1, False, info
 
         elif self.phase == 2:
-            if self.phase2_reward_mode == "legacy":
-                reward = -dist * 4.0 - (1.0 - angle1) ** 2 * 3.0 - action_change * 0.3 - 0.2
-                # 允许略压过目标平面，但末端不得低于方块顶面 3.5cm（避免圆盘嵌进方块）
-                if dist < self.dist_threshold and angle1 > self.angle1_threshold \
-                        and ee_pos[2] < target_pos[2] + 0.01 \
-                        and ee_pos[2] > float(self.box_pos[2]) + 0.050:
-                    reward += 60.0
-                    self.phase = 3
-                    self.attached = True         # 抓住：方块跟随末端
-                    info["final_phase"] = 3
-                    return self._get_obs(), reward, self.terminate_on_phase2, truncated, info
-            else:
-                collision_penalty = -self.collision_penalty_value if self.cube_hit else 0.0
-                reward = -dist * 4.0 - (1.0 - angle1) ** 2 * 3.0 - action_change * 0.3 + collision_penalty
-
-                if self.prev_dist is None:
-                    self.prev_dist = dist
-                delta = float(np.clip(self.prev_dist - dist, -0.05, 0.05))
-                self.prev_dist = dist
-                reward += 20.0 * delta
-
-                qvel_norm = float(np.linalg.norm(self.data.qvel[self.arm_dof_adr]))
-                in_pos = dist < self.dist_threshold and angle1 > self.angle1_threshold
-                if in_pos and qvel_norm < self.vel_threshold:
-                    self.still_count += 1
-                else:
-                    self.still_count = 0
-
-                if in_pos and self.still_count >= self.still_count_threshold:
-                    reward += 30.0
-                    self.phase = 3
-                    info["final_phase"] = 3
-                    return self._get_obs(), reward, False, truncated, info
-
-                if in_pos:
-                    reward += 0.5 * (1.0 - min(1.0, qvel_norm / max(self.vel_threshold, 1e-6)))
-                    reward -= min(qvel_norm, 2.0) * 0.5
-                else:
-                    reward -= 0.05
+            reward = -dist * 4.0 - (1.0 - angle1) ** 2 * 3.0 - action_change * 0.3 - 0.2
+            # 允许略压过目标平面，但末端不得低于方块顶面 5cm（避免圆盘嵌进方块）
+            if dist < self.dist_threshold and angle1 > self.angle1_threshold \
+                    and ee_pos[2] < target_pos[2] + 0.01 \
+                    and ee_pos[2] > float(self.box_pos[2]) + 0.050:
+                reward += 60.0
+                self.phase = 3
+                self.attached = True              # 抓住：方块跟随末端
+                info["final_phase"] = 3
+                return self._get_obs(), reward, self.terminate_on_phase2, truncated, info
 
         elif self.phase == 3:
             # 抓后竖直抬起（动作由 _retract_action 确定性给出）
@@ -370,10 +388,11 @@ class ArmEnv(gym.Env):
         target_pos = self._target().copy()
         rel_pos = target_pos - ee_pos
         phase = np.array([float(self.phase)])
-        # 4 + 4 + 3 + 3 + 3 + 1 = 18
+        cube_speed = np.array([float(self.box_vel[0])])   # 方块沿带速度
+        # 4 + 4 + 3 + 3 + 3 + 1 + 1 = 19
 
         return np.concatenate(
-            [qpos, qvel, ee_pos, target_pos, rel_pos, phase]
+            [qpos, qvel, ee_pos, target_pos, rel_pos, phase, cube_speed]
         ).astype(np.float32)
 
     # ---------------- 课程接口 ----------------
