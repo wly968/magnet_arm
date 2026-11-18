@@ -2,7 +2,7 @@
 os.environ["OMP_NUM_THREADS"]="1"
 sys.path.insert(0,'scene_magnet')
 import test as t
-env=t.ArmEnv(terminate_on_phase2=False)
+env=t.ArmEnv()
 models=t.load_models(env)
 m1,m2,m3=models
 obs,_=env.reset(); t.apply_thresholds(env, env.phase); last=env.phase

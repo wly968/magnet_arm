@@ -7,7 +7,7 @@ m1=PPO.load(r"scene_magnet/ppo_arm_reach.zip", device="cpu")
 m2=PPO.load(r"scene_magnet/saves/phase34_retract.zip", device="cpu")
 m3=PPO.load(r"scene_magnet/saves/phase6_home.zip", device="cpu")
 for alpha in (0.0, 0.5):
-    env=t.ArmEnv(terminate_on_phase2=False); env.smooth_alpha=alpha
+    env=t.ArmEnv(); env.smooth_alpha=alpha
     dips=[]; ok=0
     for ep in range(25):
         obs,_=env.reset(); t.apply_thresholds(env, env.phase); last=env.phase

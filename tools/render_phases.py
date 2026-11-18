@@ -56,7 +56,7 @@ def overview():
 
 
 def phases():
-    env = ArmEnv(terminate_on_phase2=False)
+    env = ArmEnv()
     env.smooth_alpha = 0.5
     m1 = PPO.load(os.path.join(SCENE, "ppo_arm_reach.zip"), env=env, device="cpu")
     m2 = PPO.load(os.path.join(SCENE, "saves", "phase34_retract.zip"), env=env, device="cpu")

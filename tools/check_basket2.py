@@ -1,7 +1,7 @@
 ﻿import sys, numpy as np
 sys.path.insert(0,'scene_magnet')
 from envs.arm_env import ArmEnv
-e=ArmEnv(terminate_on_phase1=False, terminate_on_phase2=False); e.reset()
+e=ArmEnv(); e.reset()
 # 模拟“已经放到放料点”：把方块摆到 drop_pos，然后释放
 e.data.mocap_pos[e.mocap_id] = [0.65, -0.45, 0.375]
 e.phase=6; e.attached=False; e.released=True; e.collected=False

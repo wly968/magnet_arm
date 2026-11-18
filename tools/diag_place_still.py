@@ -4,7 +4,7 @@ ROOT=r"D:\programming\python\mujoco_xml"; SCENE=os.path.join(ROOT,"scene_magnet"
 from stable_baselines3 import PPO
 from envs.arm_env import ArmEnv
 m2=PPO.load(os.path.join(SCENE,"saves","phase345.zip"), device="cpu")
-e=ArmEnv(terminate_on_phase2=False, max_phase=6); e.max_steps=300
+e=ArmEnv(); e.max_steps=300
 e._set_dist(0.05); e._set_angle1(0.945); e._set_still_count(0)
 vs=[]; d=[]
 for ep in range(20):

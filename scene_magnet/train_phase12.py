@@ -25,8 +25,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback
 
-from envs.arm_env import (ArmEnv, CurriculumCallback, PhaseTrackerCallback,
-                          WaitAwareMonitor)
+from envs.arm_env import (ArmEnv, CurriculumCallback, PhaseTrackerCallback,WaitAwareMonitor)
 
 N_ENVS = 24
 TOTAL_STEPS = 4000_000   # 1.5M 只够到 0.06 档，3M 才能到 0.04 档
@@ -57,15 +56,15 @@ if __name__ == "__main__":
         render=False,
         verbose=1,
     )
-    #model = PPO.load("./saves/phase1.zip", env=env, device="cpu", learning_rate=1e-4)
-    #'''
+    model = PPO.load("./saves/phase1.zip", env=env, device="cpu", learning_rate=1e-4)
+    '''
     model = PPO(
         "MlpPolicy", env, verbose=1, learning_rate=LEARNING_RATE,
         n_steps=512, batch_size=1024, n_epochs=5,
         gamma=0.99, gae_lambda=0.95, ent_coef=0.005,
         device="cpu", policy_kwargs=dict(net_arch=[128, 128]),
         seed=0, target_kl=0.02,
-    )#'''
+    )'''
 
     print(f"开始训练 phase 1/2：{N_ENVS} 环境，{TOTAL_STEPS} 步")
     model.learn(

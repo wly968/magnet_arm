@@ -80,12 +80,12 @@ class ArmEnv(gym.Env):
     phase 1: 到方块上方 15cm
     phase 2: 下压到方块上方约 6cm，满足 dist/angle 即成功（抓取）
 
-    terminate_on_phase1:
-      True  —— 把 phase 1 当独立任务：+60 并结束（用于单独训 phase 1）
-      False —— 作为完整流程的一段：+30 继续（用于训 phase 1→2 连贯策略）
+    各阶段是否结束回合，直接改对应分支 return 里的第三个布尔值即可：
+      return self._get_obs(), reward, True/False, truncated, info
+      True = 该阶段完成后结束回合并算成功；False = 继续下一阶段
     """
 
-    def __init__(self, terminate_on_phase1=True, terminate_on_phase2=True, max_phase=7):
+    def __init__(self):
         super().__init__()
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         xml_path = os.path.join(base_dir, "assets", "models", "train_scene.xml")
@@ -115,9 +115,6 @@ class ArmEnv(gym.Env):
         self.vel_threshold = 0.15
         self.home_tol = 0.15   # phase 6 判定：关节角与 home 的偏差
 
-        self.terminate_on_phase1 = terminate_on_phase1
-        self.terminate_on_phase2 = terminate_on_phase2
-        self.max_phase = max_phase
         self.cube_hit = False
         # 抓后抬起：由环境确定性执行，训练/测试一致，避免策略在交接处“勾一下”
         self.scripted_retract = True
@@ -346,12 +343,11 @@ class ArmEnv(gym.Env):
         elif self.phase == 1:
             reward = -dist * 4.0 - (1.0 - angle1) ** 2 * 3.0 - action_change * 0.3
             if dist < self.dist_threshold and angle1 > self.angle1_threshold:
-                # terminate_on_phase1=True：把 phase 1 当成独立任务（+60 并结束）
-                # False：作为完整流程的一段（+30，继续到 phase 2）
-                reward += 60.0 if self.terminate_on_phase1 else 30.0
+                reward += 30.0
                 self.phase = 2
                 info["final_phase"] = 2
-                return self._get_obs(), reward, self.terminate_on_phase1, False, info
+                # ↓ 第三个值：True = 到此结束回合，False = 继续 phase 2
+                return self._get_obs(), reward, False, False, info
 
         elif self.phase == 2:
             reward = -dist * 4.0 - (1.0 - angle1) ** 2 * 3.0 - action_change * 0.3 - 0.2
@@ -363,7 +359,8 @@ class ArmEnv(gym.Env):
                 self.phase = 3
                 self.attached = True              # 抓住：方块跟随末端
                 info["final_phase"] = 3
-                return self._get_obs(), reward, self.terminate_on_phase2, truncated, info
+                # ↓ 第三个值：True = 到此结束回合，False = 继续 phase 3
+                return self._get_obs(), reward, False, truncated, info
 
         elif self.phase == 3:
             # 抓后竖直抬起（动作由 _retract_action 确定性给出）
@@ -401,9 +398,7 @@ class ArmEnv(gym.Env):
                 self.attached = False        # 放下：方块解锁
                 self.released = True         # 交给 B 带，滑向收集篮
                 info["final_phase"] = 6
-                if self.max_phase <= 6:          # 只训到放料：此处即成功终止
-                    info["success"] = True
-                    return self._get_obs(), reward, True, False, info
+                # ↓ 第三个值：True = 放料后结束（只训到 phase 5 时用），False = 继续回原位
                 return self._get_obs(), reward, False, truncated, info
 
         else:

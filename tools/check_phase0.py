@@ -2,7 +2,7 @@
 os.environ["OMP_NUM_THREADS"]="1"
 sys.path.insert(0,'scene_magnet')
 import test as t
-env=t.ArmEnv(terminate_on_phase2=False); env.smooth_alpha=0.5
+env=t.ArmEnv(); env.smooth_alpha=0.5
 models=t.load_models(env)
 ph={}; steps=[]; attach=[]
 for ep in range(50):

@@ -9,7 +9,7 @@ from envs.arm_env import ArmEnv, CurriculumCallback
 from envs.phase6 import Phase6Env
 m1=PPO.load(os.path.join(SCENE,"ppo_arm_reach.zip"), device="cpu")
 m2=PPO.load(os.path.join(SCENE,"saves","phase34_retract.zip"), device="cpu")
-def make(): return Monitor(Phase6Env(ArmEnv(terminate_on_phase2=False), m1, m2))
+def make(): return Monitor(Phase6Env(ArmEnv(), m1, m2))
 env=DummyVecEnv([make for _ in range(16)])
 m3=PPO("MlpPolicy", env, verbose=0, learning_rate=3e-4, n_steps=512, batch_size=1024,
        n_epochs=5, gamma=0.99, gae_lambda=0.95, ent_coef=0.01, device="cpu",

@@ -3,7 +3,7 @@ os.environ["OMP_NUM_THREADS"]="1"
 sys.path.insert(0,'scene_magnet')
 import test as t
 from stable_baselines3 import PPO
-env=t.ArmEnv(terminate_on_phase2=False)
+env=t.ArmEnv()
 m1=PPO.load(r"scene_magnet/ppo_arm_reach.zip", env=env, device="cpu")
 m2=PPO.load(r"scene_magnet/saves/phase34_retract.zip", env=env, device="cpu")
 ok=0; hits=0; by={}; zs_all=[]; steps=[]

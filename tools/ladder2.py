@@ -6,7 +6,7 @@ from envs.arm_env import ArmEnv
 m=PPO.load(r"scene_magnet/saves/phase1.zip", device="cpu")
 print("你的 phase1.zip 阈值阶梯（phase1 不终止模式）：")
 for d,a,s in ((0.06,0.90,0),(0.05,0.94,0),(0.04,0.95,1),(0.03,0.98,1)):
-    e=ArmEnv(terminate_on_phase1=False, terminate_on_phase2=True, max_phase=3)
+    e=ArmEnv()
     e._set_dist(d); e._set_angle1(a); e._set_still_count(s)
     ok=0
     for ep in range(50):

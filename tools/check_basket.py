@@ -1,7 +1,7 @@
 ﻿import sys, numpy as np
 sys.path.insert(0,'scene_magnet')
 from envs.arm_env import ArmEnv
-e=ArmEnv(terminate_on_phase1=False, terminate_on_phase2=False); e.reset()
+e=ArmEnv(); e.reset()
 # 直接模拟“已放料”：释放到 B 带
 e.phase=6; e.attached=False; e.released=True; e.collected=False
 ys=[]

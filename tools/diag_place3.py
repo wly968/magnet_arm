@@ -5,7 +5,7 @@ from stable_baselines3 import PPO
 from envs.arm_env import ArmEnv
 m2=PPO.load(os.path.join(SCENE,"saves","phase34_retract.zip"), device="cpu")
 for vel in (0.15, 0.3, 0.5, 0.8):
-    e=ArmEnv(terminate_on_phase2=False, max_phase=6); e.max_steps=300
+    e=ArmEnv(); e.max_steps=300
     e._set_dist(0.05); e._set_angle1(0.945); e._set_still_count(1)
     e.vel_threshold=vel
     ph={}; vs=[]

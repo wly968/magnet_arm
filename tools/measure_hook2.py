@@ -5,7 +5,7 @@ import test as t
 from stable_baselines3 import PPO
 
 def measure(m2, n=20):
-    env=t.ArmEnv(terminate_on_phase2=False)
+    env=t.ArmEnv()
     m1=PPO.load(r"scene_magnet/ppo_arm_reach.zip", env=env, device="cpu")
     devs=[]; jerks=[]; ok=0
     for ep in range(n):

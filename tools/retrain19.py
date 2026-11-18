@@ -18,7 +18,7 @@ t0=time.time(); m1.learn(total_timesteps=1_500_000, callback=CurriculumCallback(
 m1.save(os.path.join(SCENE,"ppo_arm_reach.zip"))
 
 # ---- model2：phase 3-5 ----
-def make2(): return Monitor(Phase34Env(ArmEnv(terminate_on_phase2=False, max_phase=6), m1))
+def make2(): return Monitor(Phase34Env(ArmEnv(), m1))
 env2=DummyVecEnv([make2 for _ in range(24)])
 m2=PPO("MlpPolicy", env2, verbose=0, learning_rate=3e-4, n_steps=512, batch_size=1024,
        n_epochs=5, gamma=0.99, gae_lambda=0.95, ent_coef=0.01, device="cpu",
@@ -28,7 +28,7 @@ t0=time.time(); m2.learn(total_timesteps=2_000_000, callback=CurriculumCallback(
 m2.save(os.path.join(SCENE,"saves","phase34_retract.zip"))
 
 # ---- model3：phase 6 ----
-def make3(): return Monitor(Phase6Env(ArmEnv(terminate_on_phase2=False), m1, m2))
+def make3(): return Monitor(Phase6Env(ArmEnv(), m1, m2))
 env3=DummyVecEnv([make3 for _ in range(16)])
 m3=PPO("MlpPolicy", env3, verbose=0, learning_rate=3e-4, n_steps=512, batch_size=1024,
        n_epochs=5, gamma=0.99, gae_lambda=0.95, ent_coef=0.01, device="cpu",

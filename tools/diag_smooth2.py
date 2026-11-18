@@ -6,7 +6,7 @@ from envs.arm_env import ArmEnv
 for name in ("saves/phase345_smooth2.zip","saves/phase34_retract.zip"):
     m2=PPO.load(os.path.join(r"scene_magnet",name), device="cpu")
     for th in ((0.06,0.93),(0.05,0.945)):
-        e=ArmEnv(terminate_on_phase2=False, max_phase=6); e.max_steps=300
+        e=ArmEnv(); e.max_steps=300
         e._set_dist(th[0]); e._set_angle1(th[1]); e._set_still_count(0)
         ph={}
         for ep in range(40):

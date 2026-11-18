@@ -2,7 +2,7 @@
 os.environ["OMP_NUM_THREADS"]="1"
 sys.path.insert(0,'scene_magnet')
 import test as t
-env=t.ArmEnv(terminate_on_phase2=False)
+env=t.ArmEnv()
 m1=t.PPO.load(r"scene_magnet/ppo_arm_reach.zip", env=env, device="cpu") if hasattr(t,"PPO") else None
 from stable_baselines3 import PPO
 m1=PPO.load(r"scene_magnet/ppo_arm_reach.zip", env=env, device="cpu")

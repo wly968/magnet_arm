@@ -114,7 +114,7 @@ def apply_thresholds(env, phase, entry=False):
         env.phase_entry_steps = 6
 
 
-def run_episode(env, models):
+def run_episode(env, models, stop_phase=None):
     obs, _ = env.reset()
     apply_thresholds(env, env.phase)
     last_phase = env.phase
@@ -127,6 +127,8 @@ def run_episode(env, models):
         policy = pick_policy(models, env.phase)
         action, _ = policy.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
+        if stop_phase is not None and env.phase >= stop_phase:
+            break                       # 达到当前模型能跑到的阶段就停
         if terminated or truncated:
             break
     return env.phase, steps + 1
@@ -138,7 +140,7 @@ def pre_run(env, models, target_phase, n=PRE_RUN_EPISODES):
     steps = []
     t0 = time.time()
     for ep in range(n):
-        phase, n_steps = run_episode(env, models)
+        phase, n_steps = run_episode(env, models, stop_phase=target_phase)
         counts[phase] = counts.get(phase, 0) + 1
         steps.append(n_steps)
         if (ep + 1) % 20 == 0:
@@ -193,13 +195,13 @@ def main():
         return
 
     if p2 is None:
-        env = ArmEnv(terminate_on_phase1=False, terminate_on_phase2=True, max_phase=3)
+        env = ArmEnv()
         target, mode = 3, "phase 1/2（只有 model1）"
     elif p3 is None:
-        env = ArmEnv(terminate_on_phase1=False, terminate_on_phase2=False, max_phase=6)
+        env = ArmEnv()
         target, mode = 6, "phase 1-5（model1 + model2）"
     else:
-        env = ArmEnv(terminate_on_phase1=False, terminate_on_phase2=False)
+        env = ArmEnv()
         target, mode = 7, "全流程（三模型）"
     env.smooth_alpha = 0.5
 

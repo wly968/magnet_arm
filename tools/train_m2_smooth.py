@@ -8,7 +8,7 @@ from stable_baselines3.common.monitor import Monitor
 from envs.arm_env import ArmEnv, CurriculumCallback
 from envs.phase34 import Phase34Env
 m1=PPO.load(os.path.join(SCENE,"ppo_arm_reach.zip"), device="cpu")
-def make(): return Monitor(Phase34Env(ArmEnv(terminate_on_phase2=False, max_phase=6), m1))
+def make(): return Monitor(Phase34Env(ArmEnv(), m1))
 env=DummyVecEnv([make for _ in range(24)])
 m2=PPO("MlpPolicy", env, verbose=0, learning_rate=3e-4, n_steps=512, batch_size=1024,
        n_epochs=5, gamma=0.99, gae_lambda=0.95, ent_coef=0.01, device="cpu",
