@@ -145,36 +145,11 @@ def pre_run(env, models, target_phase, n=PRE_RUN_EPISODES):
         counts[phase] = counts.get(phase, 0) + 1
         steps.append(n_steps)
         waits.append(n_wait)
-        if (ep + 1) % 20 == 0:
-            print(f"  已完成 {ep + 1}/{n}")
 
-    ok = sum(c for p, c in counts.items() if p >= target_phase)
-    labels = {
-        0: "停在 phase 0（等待超时）",
-        1: "停在 phase 1（没到取料点）",
-        2: "停在 phase 2（没夹到位）",
-        3: "停在 phase 3（抬起失败）",
-        4: "停在 phase 4（没到中间姿态）",
-        5: "停在 phase 5（没放好/没静止）",
-        6: "停在 phase 6（没回到初始位）",
-    }
-    # 最终停在 phase p 表示“p 没完成”，所以完成的最后阶段是 p-1
-    stage_desc = {-1: "尚未完成任何阶段", 0: "等待（phase 0）", 1: "取料（phase 1）",
-                  2: "下抓（phase 2）", 3: "抬起（phase 3）", 4: "中间姿态（phase 4）",
-                  5: "放料（phase 5）", 6: "回原位（phase 6）"}
-    stuck = max([p for p in range(8) if counts.get(p, 0) * 2 >= n], default=0)
-    done_stage = stuck - 1
-    print(f"\n===== 结果（{n} 局，用时 {time.time() - t0:.1f}s）=====")
-    for p in range(7):
-        if counts.get(p):
-            print(f"  {labels[p]:30s}: {counts[p]}")
-    print(f"  ➜ 当前稳定能力：已完成 {stage_desc.get(done_stage, done_stage)}")
-    print(f"  达到目标阶段（phase >= {target_phase}） : {ok}")
-    print(f"  成功率: {ok}/{n} = {100.0 * ok / n:.1f}%")
-    eff = [max(0, s - w) for s, w in zip(steps, waits)]
-    print(f"  平均步数: {np.mean(steps):.1f}（含 phase 0 等待 {np.mean(waits):.1f} 步）")
-    print(f"  平均步数（不含等待）: {np.mean(eff):.1f}")
-    print("=" * 44 + "\n")
+    print(f"\n===== {n} 局结果 =====")
+    for p in range(8):
+        print(f"  phase {p}: {counts.get(p, 0)}")
+    print()
 
 
 def main():
