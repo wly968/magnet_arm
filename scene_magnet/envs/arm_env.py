@@ -15,8 +15,8 @@ class CurriculumCallback(BaseCallback):
         (250_000,   0.045, 0.950, 0),
         (500_000,   0.042, 0.958, 1),
         (800_000,   0.038, 0.965, 1),
-        (1_100_000, 0.034, 0.972, 2),
-        (1_400_000, 0.030, 0.980, 2),
+        (1_100_000, 0.034, 0.980, 2),
+        (1_400_000, 0.030, 0.990, 2),
     ]
 
     def __init__(self, verbose=0):
@@ -143,9 +143,9 @@ class ArmEnv(gym.Env):
         self.cube_speed = 0.20                          # 带 A 输送速度 (m/s)，0 = 静止
         self.belt_dir = np.array([1.0, 0.0, 0.0])        # 带 A 沿 +x
         self.spawn_mode = "gauss"                      # "uniform" | "gauss" | "fixed"
-        self.spawn_x_range = (-0.875, -0.775)            # x：带左端(-1.175)与抓取线(-0.475)中间，小幅变化
-        self.spawn_x_mean = -1.110                       # 高斯分布均值
-        self.spawn_x_std = 0.03                          # 高斯分布标准差（会裁剪到范围）
+        self.spawn_x_range = (-0.700, -0.600)            # x：靠近抓取线，等待约 60~110 步
+        self.spawn_x_mean = -0.650                       # 高斯分布均值（= 范围中心）
+        self.spawn_x_std = 0.025                         # 高斯分布标准差（范围 ±0.05，两端仅轻微裁剪）
         self.spawn_x = -1.150                            # fixed 模式下的固定值
         self.spawn_y_range = (0.440, 0.860)              # y：覆盖带面宽度约 84%（0.42/0.50）
         self.spawn_y = 0.650                             # fixed 模式下的固定 y
@@ -173,6 +173,8 @@ class ArmEnv(gym.Env):
                 self.arm_geom_ids.add(int(_g))
 
         self.ee_id = self.model.site("ee_site").id
+        self.ee_val1 = np.zeros(6)
+
         self.prev_action = np.zeros(4, dtype=np.float64)
         self.prev_action2 = np.zeros(4, dtype=np.float64)
         self.phase2_eepos = self.box_pos[2] + 0.04
@@ -308,6 +310,8 @@ class ArmEnv(gym.Env):
         dt_step = self.model.opt.timestep * 5
         self.box_vel = (self.box_pos - prev_box) / max(dt_step, 1e-9)
         ee_pos = self.data.site_xpos[self.ee_id].copy()
+        mujoco.mj_objectVelocity(self.model,self.data,mujoco.mjtObj.mjOBJ_SITE,self.ee_id,self.ee_val1,0)
+        self.ee_val = self.ee_val1[3:]
         target_pos = self._target()
         dist = float(min(np.linalg.norm(ee_pos - target_pos), 1.0))
 
@@ -348,16 +352,20 @@ class ArmEnv(gym.Env):
                 self.phase = 2
                 info["final_phase"] = 2
                 # ↓ 第三个值：True = 到此结束回合，False = 继续 phase 2
-                return self._get_obs(), reward, True, False, info
+                return self._get_obs(), reward, False, False, info
 
         elif self.phase == 2:
             reward = -dist * 4.0 - (1.0 - angle1) ** 2 * 3.0 - action_change * 0.3 - 0.2
             # 允许略压过目标平面，但末端不得低于方块顶面 5cm（避免圆盘嵌进方块）
-            if dist < self.dist_threshold and angle1 > self.angle1_threshold \
-                    and ee_pos[2] < target_pos[2] + 0.01 \
-                    and ee_pos[2] > float(self.box_pos[2]) + 0.050:
+            if dist < self.dist_threshold and angle1 > self.angle1_threshold and np.linalg.norm(self.ee_val-self.box_vel)<0.03:
+                self.still_count += 1
+            if not (dist < self.dist_threshold and angle1 > self.angle1_threshold and np.linalg.norm(self.ee_val-self.box_vel)<0.03):
+                self.still_count = 0
+            if dist < self.dist_threshold and angle1 > self.angle1_threshold and ee_pos[2] < target_pos[2] + 0.01 \
+                    and ee_pos[2] > float(self.box_pos[2]) + 0.050 and self.still_count > 3 :
                 reward += 60.0
                 self.phase = 3
+                self.still_count = 0
                 self.attached = True              # 抓住：方块跟随末端
                 info["final_phase"] = 3
                 # ↓ 第三个值：True = 到此结束回合，False = 继续 phase 3
@@ -400,7 +408,7 @@ class ArmEnv(gym.Env):
                 self.released = True         # 交给 B 带，滑向收集篮
                 info["final_phase"] = 6
                 # ↓ 第三个值：True = 放料后结束（只训到 phase 5 时用），False = 继续回原位
-                return self._get_obs(), reward, False, truncated, info
+                return self._get_obs(), reward, True, truncated, info
 
         else:
             # phase 6：回到初始位置；若开启收集，需等方块进入篮子

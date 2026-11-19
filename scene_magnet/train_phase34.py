@@ -23,7 +23,7 @@ from envs.phase34 import Phase34Env
 
 SAVES = os.path.join(HERE, "saves")
 N_ENVS = 8
-TOTAL_STEPS = 2_000_000
+TOTAL_STEPS = 6_000_000
 
 
 def make_env(model1):

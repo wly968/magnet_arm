@@ -31,14 +31,14 @@ from envs.arm_env import ArmEnv
 
 # 候选文件（按顺序找第一个存在的）
 CANDIDATES = {
-    "model1": ["ppo_arm_reach.zip", os.path.join("saves", "phase1.zip"),
-               os.path.join("saves", "phase2.zip")],
+    "model1": ["ppo_arm_reach.zip", os.path.join("saves", "phase2.zip"),
+               os.path.join("saves", "phase1.zip")],
     "model2": [os.path.join("saves", "phase34_retract.zip")],
     "model3": [os.path.join("saves", "phase6_home.zip")],
 }
 
 # 每个阶段用的 (dist, angle, still)
-TH_PHASE12 = (0.03, 0.98, 1)
+TH_PHASE12 = (0.03, 0.99, 1)
 TH_PHASE35 = (0.05, 0.945, 1)
 TH_PHASE6 = (0.06, 0.94, 0)
 
