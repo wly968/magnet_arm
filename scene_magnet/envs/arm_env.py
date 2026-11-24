@@ -507,7 +507,9 @@ class ArmEnv(gym.Env):
         self.spawn_x_mean = -0.650                       # 高斯分布均值（= 范围中心）
         self.spawn_x_std = 0.025                         # 高斯分布标准差（范围 ±0.05，两端仅轻微裁剪）
         self.spawn_x = -1.150                            # fixed 模式下的固定值
-        self.spawn_y_range = (0.530, 0.770)              # y：关于带面中心 0.65 对称，半宽 0.12
+        # y：关于带面中心 0.65 对称，半宽 0.08。实测 angle=0.96 时
+        # y<=0.735 抓取 100%，y>=0.740 为 0%（运动学姿态边界），故在此留 5 mm 余量
+        self.spawn_y_range = (0.570, 0.730)
         self.spawn_y = 0.650                             # fixed 模式下的固定 y
         self.arrive_x = -0.475                           # 原刷新区最左端：到达后进入 phase 1
         self.max_wait_steps = 900                        # phase 0 等待上限（不计入回合预算）
