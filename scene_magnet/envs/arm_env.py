@@ -505,8 +505,9 @@ class ArmEnv(gym.Env):
         self.cube_speed = 0.20                          # 带 A 输送速度 (m/s)，0 = 静止
         self.belt_dir = np.array([1.0, 0.0, 0.0])        # 带 A 沿 +x
         self.spawn_mode = "uniform"                    # "uniform" | "gauss" | "fixed"
-        # x：整条可抓取带随机刷新（实测 -0.70~-0.40 均 100% 成功），右端留 2 cm 余量
-        self.spawn_x_range = (-0.700, -0.420)
+        # x：整条带可刷新区间。带 A 覆盖 x∈[-1.20, 0.30]（+x 方向输送），
+        # 手臂能"追上"的初始 x 右边界约 -0.36（再往右方块会滑出可达区），左端可用到 -1.15
+        self.spawn_x_range = (-1.150, -0.360)
         self.spawn_x_mean = -0.650                       # 高斯分布均值（= 范围中心）
         self.spawn_x_std = 0.025                         # 高斯分布标准差（范围 ±0.05，两端仅轻微裁剪）
         self.spawn_x = -1.150                            # fixed 模式下的固定值
