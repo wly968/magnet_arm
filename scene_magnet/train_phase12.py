@@ -29,8 +29,8 @@ from envs.arm_env import (ArmEnv, CurriculumCallback, PhaseTrackerCallback,
                           WaitAwareMonitor, DiagCallback, TrainLogCallback)
 
 N_ENVS = 24
-TOTAL_STEPS = 2000_000   # 1.5M 只够到 0.06 档，3M 才能到 0.04 档
-START_STAGE = 3          # 从第几档开始（0 起）：4 = 第 5 档，跳过已攻克的 1~4 档
+TOTAL_STEPS = 1000_000   # 1.5M 只够到 0.06 档，3M 才能到 0.04 档
+START_STAGE = 4          # 从第几档开始（0 起）：4 = 第 5 档，跳过已攻克的 1~4 档
 LEARNING_RATE = 3e-4
 
 # 终点阈值：eval 固定用它，保证 best_model 按“最难档”挑选

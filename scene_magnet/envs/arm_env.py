@@ -46,6 +46,7 @@ class CurriculumCallback(BaseCallback):
         self._probe_env = None
         self._last_probe = -10**18
         self._pass_streak = 0
+        self.still_target = "still"   # "still"=phase 2/5 的 still；"home_still"=phase 6 的 dwell
 
     def _stages(self):
         out = []
@@ -506,7 +507,7 @@ class ArmEnv(gym.Env):
         self.belt_dir = np.array([1.0, 0.0, 0.0])        # 带 A 沿 +x
         self.spawn_mode = "uniform"                    # "uniform" | "gauss" | "fixed"
         # x：均匀随机（非高斯），方块直接出现在抓取带内 [-0.475, -0.100]
-        self.spawn_x_range = (-0.475, -0.100)
+        self.spawn_x_range = (-0.475, -0.200)
         self.spawn_x_mean = -0.650                       # 高斯分布均值（= 范围中心）
         self.spawn_x_std = 0.025                         # 高斯分布标准差（范围 ±0.05，两端仅轻微裁剪）
         self.spawn_x = -1.150                            # fixed 模式下的固定值
