@@ -474,7 +474,8 @@ class ArmEnv(gym.Env):
         self.phase1_dist = 0.050
         self.phase1_angle = 0.940
         # phase 4 只是"搬运经过点"，不要求工具竖直（竖直解在该点需要大幅换构型）
-        self.phase4_angle = 0.600
+        self.phase4_angle = 0.800
+        self.transfer_vel_penalty = 0.02    # phase 4 的速度平方惩罚系数（9 rad/s 时约 -1.6/步；0 = 关闭）
         self.phase = 1
 
         self.arm_joints = [
@@ -797,8 +798,11 @@ class ArmEnv(gym.Env):
 
         elif self.phase == 4:
             # 转移段：加大动作变化与 jerk 惩罚，消除“勾一下”
-            reward = -dist * 4.0 - 5.0 * (1.0 - angle1) - action_change * 0.3
-            if dist < self.dist_threshold and angle1 > self.phase4_angle:
+            # 再加速度平方惩罚，抑制阶段切换时的甩动（系数 0 可关闭）
+            qvel4 = self.data.qvel[self.arm_dof_adr]
+            reward = (-dist * 4.0 - 5.0 * (1.0 - angle1) - action_change * 0.3
+                      - self.transfer_vel_penalty * float(np.dot(qvel4, qvel4)))
+            if dist < self.dist_threshold*4 and angle1 > self.phase4_angle:
                 reward += 30.0
                 self.phase = 5
                 info["final_phase"] = 5
@@ -823,7 +827,7 @@ class ArmEnv(gym.Env):
                 self.released = True         # 交给 B 带，滑向收集篮
                 info["final_phase"] = 6
                 # ↓ 第三个值：True = 放料后结束（只训到 phase 5 时用），False = 继续回原位
-                return self._get_obs(), reward, False, truncated, info
+                return self._get_obs(), reward, True, truncated, info
 
         else:
             # phase 6：回到初始位置；若开启收集，需等方块进入篮子

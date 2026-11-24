@@ -27,7 +27,7 @@ from envs.phase34 import Phase34Env
 
 SAVES = os.path.join(HERE, "saves")
 N_ENVS = 16
-TOTAL_STEPS = 3_000_000
+TOTAL_STEPS = 2000_000
 STOP_PHASE = 6                      # 到 phase 6 就结束（phase 6 交给 model3）
 HANDOFF_STEPS = 400                 # phase0(~87)+phase1(~56)+phase2(~90)，留余量
 # phase 5 课程：直接复用 phase 1/2 的 SCHEDULE（dist/angle/still/rel 六档）
