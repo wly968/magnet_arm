@@ -1,4 +1,4 @@
-﻿"""可视化测试：根据已训练好的模型，自动选择能跑到哪一阶段。
+"""可视化测试：根据已训练好的模型，自动选择能跑到哪一阶段。
 
 三种模式（自动判断，也可用 --only 强制）：
   phase12 ：只有 model1             → 跑 phase 0/1/2，phase 2 成功后结束
@@ -191,6 +191,9 @@ def main():
     env.smooth_alpha = 0.5
 
     print(f"\n模式：{mode}")
+    print(f"刷新范围：x∈[{env.spawn_x_range[0]:.2f}, {env.spawn_x_range[1]:.2f}] "
+          f"y∈[{env.spawn_y_range[0]:.2f}, {env.spawn_y_range[1]:.2f}] | "
+          f"带速 {env.cube_speed:.2f} m/s | 模式 {env.spawn_mode}")
     print(f"obs {env.observation_space.shape}  action {env.action_space.shape}\n")
     env_dim = env.observation_space.shape[0]
     models = [load_model(p1, env_dim, "model1"),
