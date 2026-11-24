@@ -447,8 +447,9 @@ class ArmEnv(gym.Env):
         # 目标点
         self.pick_offset = np.array([0.0, 0.0, 0.15])
         self.grasp_offset = np.array([0.0, 0.0, 0.06])
-        self.transfer_pose = np.array([0.42, 0.27, 0.78])
-        # 试过 [0.25, 0.25, 0.78]（yaw 行程更均衡，但 model2 需重训，否则 24/30 卡在 phase 4）
+        # 转移点取"抓取方位 126.2° → 放料方位 -34.7°"的角平分线 45.7°，两段 yaw 各 80°（均衡）
+        # 旧值（回退用）：[0.42, 0.27, 0.78]（两段 93°/68°，转移时会甩两下）
+        self.transfer_pose = np.array([0.314, 0.322, 0.78])
         self.drop_pos = np.array([0.65, -0.45, 0.435])
         self.attach_offset = np.array([0.0, 0.0, -0.3])   # 未来磁吸用
 
