@@ -471,8 +471,8 @@ class ArmEnv(gym.Env):
         self.steps = 0
         self.max_steps = 400
         # phase 1 只是"接近"，用固定宽松阈值，不随课程收紧（课程只作用于 phase 2）
-        self.phase1_dist = 0.050
-        self.phase1_angle = 0.940
+        self.phase1_dist = 0.045
+        self.phase1_angle = 0.950
         # phase 4 只是"搬运经过点"，不要求工具竖直（竖直解在该点需要大幅换构型）
         self.phase4_angle = 0.800
         self.transfer_vel_penalty = 0.02    # phase 4 的速度平方惩罚系数（9 rad/s 时约 -1.6/步；0 = 关闭）
@@ -504,8 +504,9 @@ class ArmEnv(gym.Env):
         # 传送带运动 + phase 0 等待
         self.cube_speed = 0.20                          # 带 A 输送速度 (m/s)，0 = 静止
         self.belt_dir = np.array([1.0, 0.0, 0.0])        # 带 A 沿 +x
-        self.spawn_mode = "gauss"                      # "uniform" | "gauss" | "fixed"
-        self.spawn_x_range = (-0.700, -0.600)            # x：靠近抓取线，等待约 60~110 步
+        self.spawn_mode = "uniform"                    # "uniform" | "gauss" | "fixed"
+        # x：整条可抓取带随机刷新（实测 -0.70~-0.40 均 100% 成功），右端留 2 cm 余量
+        self.spawn_x_range = (-0.700, -0.420)
         self.spawn_x_mean = -0.650                       # 高斯分布均值（= 范围中心）
         self.spawn_x_std = 0.025                         # 高斯分布标准差（范围 ±0.05，两端仅轻微裁剪）
         self.spawn_x = -1.150                            # fixed 模式下的固定值
@@ -827,7 +828,7 @@ class ArmEnv(gym.Env):
                 self.released = True         # 交给 B 带，滑向收集篮
                 info["final_phase"] = 6
                 # ↓ 第三个值：True = 放料后结束（只训到 phase 5 时用），False = 继续回原位
-                return self._get_obs(), reward, True, truncated, info
+                return self._get_obs(), reward, False, truncated, info
 
         else:
             # phase 6：回到初始位置；若开启收集，需等方块进入篮子
