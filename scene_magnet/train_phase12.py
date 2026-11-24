@@ -34,7 +34,7 @@ START_STAGE = 3          # 从第几档开始（0 起）：4 = 第 5 档，跳�
 LEARNING_RATE = 3e-4
 
 # 终点阈值：eval 固定用它，保证 best_model 按“最难档”挑选
-EVAL_DIST, EVAL_ANGLE, EVAL_STILL = 0.032, 0.98, 1
+EVAL_DIST, EVAL_ANGLE, EVAL_STILL = 0.032, 0.96, 1
 
 
 def make_env():

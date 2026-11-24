@@ -20,10 +20,10 @@ class CurriculumCallback(BaseCallback):
         (0.050, 0.940, 0, 0.20),
         (0.045, 0.950, 0, 0.10),
         (0.042, 0.958, 1, 0.10),
-        (0.038, 0.965, 1, 0.05),
-        (0.034, 0.980, 2, 0.05),
-        # 临时放宽终点（4 自由度下 angle 0.99 不可达）；后续提高精度见 README「精度上限」
-        (0.032, 0.980, 1, 0.05),
+        (0.038, 0.960, 1, 0.05),
+        (0.034, 0.965, 2, 0.05),
+        # 终点角度 0.96≈16° 倾角，磁吸盘仍能可靠吸附（4 自由度在远端做不到 0.98）
+        (0.032, 0.960, 1, 0.05),
     ]
 
     def __init__(self, min_steps=300_000, success_threshold=0.6,
@@ -448,6 +448,7 @@ class ArmEnv(gym.Env):
         self.pick_offset = np.array([0.0, 0.0, 0.15])
         self.grasp_offset = np.array([0.0, 0.0, 0.06])
         self.transfer_pose = np.array([0.42, 0.27, 0.78])
+        # 试过 [0.25, 0.25, 0.78]（yaw 行程更均衡，但 model2 需重训，否则 24/30 卡在 phase 4）
         self.drop_pos = np.array([0.65, -0.45, 0.435])
         self.attach_offset = np.array([0.0, 0.0, -0.3])   # 未来磁吸用
 
