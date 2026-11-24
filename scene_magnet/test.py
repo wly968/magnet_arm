@@ -31,16 +31,19 @@ from envs.arm_env import ArmEnv
 
 # 候选文件（按顺序找第一个存在的）
 CANDIDATES = {
-    "model1": ["ppo_arm_reach.zip", os.path.join("saves", "phase2.zip"),
-               os.path.join("saves", "phase1.zip")],
-    "model2": [os.path.join("saves", "phase34_retract.zip")],
-    "model3": [os.path.join("saves", "phase6_home.zip")],
+    "model1": [os.path.join("saves", "phase2.zip"),
+               os.path.join("saves", "phase1.zip"),
+               "ppo_arm_reach.zip"],
+    "model2": [os.path.join("saves", "phase34.zip")],
+    "model3": [os.path.join("saves", "phase6.zip"),
+               os.path.join("saves", "phase6_home.zip")],
 }
 
 # 每个阶段用的 (dist, angle, still)
-TH_PHASE12 = (0.03, 0.99, 1)
-TH_PHASE35 = (0.05, 0.945, 1)
-TH_PHASE6 = (0.06, 0.94, 0)
+TH_PHASE1 = (0.050, 0.940, 0)    # 接近：固定宽松（与训练时 phase1 判据一致）
+TH_PHASE2 = (0.032, 0.980, 1)    # 抓取：与 model1 训练的第 6 档一致
+TH_PHASE35 = (0.034, 0.980, 2)   # 搬运/放料：与 model2 训练的最后一档一致
+TH_PHASE6 = (0.060, 0.940, 0)
 
 PRE_RUN_EPISODES = 100
 
@@ -101,8 +104,11 @@ def pick_policy(models, phase):
 
 
 def apply_thresholds(env, phase, entry=False):
-    if phase < 3:
-        d, a, s = TH_PHASE12
+    if phase <= 1:
+        d, a, s = TH_PHASE1
+        env.phase1_dist, env.phase1_angle = d, a      # phase 1 用固定阈值
+    elif phase == 2:
+        d, a, s = TH_PHASE2
     elif phase < 6:
         d, a, s = TH_PHASE35
     else:

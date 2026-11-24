@@ -1,0 +1,8 @@
+# step stage thr(dist/angle/still/rel) probe pos relpos all mrel mdist mang mdz succ tout nan std ev kl
+19992 s4 thr=0.038/0.96/1/0.05 probe=nan% pos=66.3% relpos=9.6% all=6.4% mrel=0.298 mdist=0.031 mang=0.986 mdz=+0.005 succ=100% tout=0% nan=0% std=0.601 ev=0.73 kl=0.0025
+39984 s4 thr=0.038/0.96/1/0.05 probe=nan% pos=67.6% relpos=9.6% all=6.5% mrel=0.290 mdist=0.032 mang=0.985 mdz=+0.004 succ=100% tout=0% nan=0% std=0.601 ev=0.75 kl=0.0035
+59976 s4 thr=0.038/0.96/1/0.05 probe=nan% pos=64.4% relpos=9.4% all=6.1% mrel=0.288 mdist=0.032 mang=0.985 mdz=+0.003 succ=100% tout=0% nan=0% std=0.600 ev=0.78 kl=0.0034
+79968 s4 thr=0.038/0.96/1/0.05 probe=nan% pos=70.4% relpos=9.5% all=6.7% mrel=0.300 mdist=0.031 mang=0.985 mdz=+0.006 succ=100% tout=0% nan=0% std=0.599 ev=0.84 kl=0.0044
+99960 s4 thr=0.038/0.96/1/0.05 probe=nan% pos=70.5% relpos=9.9% all=7.0% mrel=0.301 mdist=0.031 mang=0.985 mdz=+0.006 succ=100% tout=0% nan=0% std=0.599 ev=0.88 kl=0.0047
+119952 s4 thr=0.038/0.96/1/0.05 probe=nan% pos=67.2% relpos=9.4% all=6.3% mrel=0.292 mdist=0.031 mang=0.985 mdz=+0.005 succ=100% tout=0% nan=0% std=0.598 ev=0.89 kl=0.0051
+139944 s4 thr=0.038/0.96/1/0.05 probe=nan% pos=70.2% relpos=9.5% all=6.6% mrel=0.298 mdist=0.030 mang=0.985 mdz=+0.006 succ=100% tout=0% nan=0% std=0.598 ev=0.95 kl=0.0046

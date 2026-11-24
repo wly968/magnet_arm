@@ -23,20 +23,24 @@ sys.path.append(HERE)
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 
-from envs.arm_env import (ArmEnv, CurriculumCallback, PhaseTrackerCallback,WaitAwareMonitor)
+from envs.arm_env import (ArmEnv, CurriculumCallback, PhaseTrackerCallback,
+                          WaitAwareMonitor, DiagCallback, TrainLogCallback)
 
 N_ENVS = 24
 TOTAL_STEPS = 2000_000   # 1.5M 只够到 0.06 档，3M 才能到 0.04 档
+START_STAGE = 3          # 从第几档开始（0 起）：4 = 第 5 档，跳过已攻克的 1~4 档
 LEARNING_RATE = 3e-4
 
 # 终点阈值：eval 固定用它，保证 best_model 按“最难档”挑选
-EVAL_DIST, EVAL_ANGLE, EVAL_STILL = 0.03, 0.98, 2
+EVAL_DIST, EVAL_ANGLE, EVAL_STILL = 0.032, 0.98, 1
 
 
 def make_env():
-    return WaitAwareMonitor(ArmEnv())
+    env = ArmEnv()
+    env.smooth_alpha = 0.6
+    return WaitAwareMonitor(env)
 
 
 if __name__ == "__main__":
@@ -46,11 +50,24 @@ if __name__ == "__main__":
     eval_env.env_method("_set_angle1", EVAL_ANGLE)
     eval_env.env_method("_set_still_count", EVAL_STILL)
 
+    curriculum = CurriculumCallback(min_steps=300_000, success_threshold=0.6,
+                                    probe_episodes=30, confirm_passes=2,
+                                    start_idx=START_STAGE)
+    train_log = TrainLogCallback(os.path.join(HERE, "saves", "train_log.txt"),
+                                 every=20_000, curriculum=curriculum)
+
+    ckpt_callback = CheckpointCallback(
+        save_freq=max(1, 500_000 // N_ENVS),      # 每 50 万步存一个
+        save_path=os.path.join(HERE, "saves", "ckpt"),
+        name_prefix="ckpt",
+        save_vecnormalize=False,
+    )
+
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=os.path.join(HERE, "saves", "best_4dof"),
         log_path=os.path.join(HERE, "saves", "eval_logs"),
-        eval_freq=max(2000, 100_000 // N_ENVS),
+        eval_freq=max(20000, 1000_000 // N_ENVS),
         n_eval_episodes=20,
         deterministic=True,
         render=False,
@@ -65,11 +82,13 @@ if __name__ == "__main__":
         device="cpu", policy_kwargs=dict(net_arch=[128, 128]),
         seed=0, target_kl=0.02,
     )'''
+    model.ent_coef = 0.0005
 
     print(f"开始训练 phase 1/2：{N_ENVS} 环境，{TOTAL_STEPS} 步")
     model.learn(
         total_timesteps=TOTAL_STEPS,
-        callback=[CurriculumCallback(), PhaseTrackerCallback(), eval_callback],
+        callback=[curriculum, PhaseTrackerCallback(), DiagCallback(every=20_000),
+              train_log, ckpt_callback, eval_callback],
         progress_bar=False,
     )
     model.save(os.path.join(HERE, "ppo_arm_reach"))
