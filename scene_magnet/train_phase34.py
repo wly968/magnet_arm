@@ -68,7 +68,7 @@ def make_env(model1):
 
 if __name__ == "__main__":
     device = "cpu"
-    m1_path = os.path.join(SAVES, "phase2.zip")          # 优先用 phase2.zip
+    m1_path = os.path.join(SAVES, "phase1-2.zip")          # 优先用 phase1-2.zip
     if not os.path.exists(m1_path):
         m1_path = os.path.join(HERE, "ppo_arm_reach.zip")
     model1 = PPO.load(m1_path, device=device)
@@ -96,7 +96,7 @@ if __name__ == "__main__":
 
     import glob
     cands = glob.glob(os.path.join(SAVES, "ckpt_p35", "*.zip"))
-    cands += [os.path.join(SAVES, "phase34_retract.zip")]
+    cands += [os.path.join(SAVES, "phase3-5.zip")]
     cands = [c for c in cands if os.path.exists(c)]
     cands.sort(key=os.path.getmtime)
     warm = cands[-1] if cands else ""
@@ -111,7 +111,6 @@ if __name__ == "__main__":
             device=device, policy_kwargs=dict(net_arch=[128, 128]),
             seed=0, target_kl=0.02,
         )
-    model2 = PPO.load("./saves/phase34", env=env, device="cpu", learning_rate=1e-4)
     p5_curriculum = PhaseCurriculumCallback(
         make_env(model1), P5_STAGES, target_phase=6,
         min_steps=100_000, success_threshold=0.6,

@@ -41,13 +41,13 @@ python test.py --no-viewer --episodes 100   # 纯批量评测
 
 | 文件 | 负责 | 判定 |
 |---|---|---|
-| `saves/phase2.zip` | phase 0-2 | dist 3.2 cm / angle 0.96 / 2 帧 |
-| `saves/phase34.zip` | phase 3-5 | dist 3.4 cm / angle 0.965 / 3 帧 |
+| `saves/phase1-2.zip` | phase 0-2 | dist 3.2 cm / angle 0.96 / 2 帧 |
+| `saves/phase3-5.zip` | phase 3-5 | dist 3.4 cm / angle 0.965 / 3 帧 |
 | `saves/phase6.zip` | phase 6 | 关节偏差 < 0.15 rad / 3 帧 |
 
-`train_phase12.py` 读 `saves/phase2.zip` 热启动、写 `ppo_arm_reach.zip`；
-`train_phase34.py` 读 `saves/phase2.zip`、写 `ppo_arm_reach.zip`；
-`train_phase6.py` 读 `saves/phase2.zip` + `saves/phase34.zip`、写 `ppo_arm_reach.zip`。
+`train_phase12.py` 读 `saves/phase1-2.zip` 热启动、写 `ppo_arm_reach.zip`；
+`train_phase34.py` 读 `saves/phase1-2.zip`、写 `ppo_arm_reach.zip`；
+`train_phase6.py` 读 `saves/phase1-2.zip` + `saves/phase3-5.zip`、写 `ppo_arm_reach.zip`。
 **每个脚本训完要手动把 `ppo_arm_reach.zip` 改名成下一阶段要读的名字。**
 
 ## 阈值在哪改

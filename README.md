@@ -24,8 +24,8 @@
 
 | 环节 | 模型文件 | 判定阈值 | 实测 |
 |---|---|---|---|
-| phase 0-2 接近 + 抓取 | `saves/phase2.zip` | dist 3.2 cm / angle 0.96 / 连续 2 帧 / rel 0.05 | **六档课程全部 100%**（每档 30 局） |
-| phase 3-5 抬起 + 转移 + 放料 | `saves/phase34.zip` | dist 3.4 cm / angle 0.965 / 连续 3 帧 | **放料完成 30/30**（确定性 & 随机采样均 100%） |
+| phase 0-2 接近 + 抓取 | `saves/phase1-2.zip` | dist 3.2 cm / angle 0.96 / 连续 2 帧 / rel 0.05 | **六档课程全部 100%**（每档 30 局） |
+| phase 3-5 抬起 + 转移 + 放料 | `saves/phase3-5.zip` | dist 3.4 cm / angle 0.965 / 连续 3 帧 | **放料完成 30/30**（确定性 & 随机采样均 100%） |
 | phase 6 回原位 | `saves/phase6.zip` | 关节偏差 < 0.15 rad / 连续 3 帧 | **20/20**，最小偏差 0.053 rad |
 | **全流程（三模型接力）** | 三者 | — | **100/100**（单方块）<br>连续 10 回合 100%（方块池） |
 
@@ -130,8 +130,8 @@ mujoco_xml/
 │   │   ├── train_scene.xml       # 训练场景（无贴图，10 个方块槽位）
 │   │   └── show_scene.xml        # 展示场景
 │   ├── saves/                    # 模型与日志
-│   │   ├── phase2.zip            # model1（phase 0-2）
-│   │   ├── phase34.zip           # model2（phase 3-5）
+│   │   ├── phase1-2.zip          # model1（phase 0-2）
+│   │   ├── phase3-5.zip          # model2（phase 3-5）
 │   │   ├── phase6.zip            # model3（phase 6）
 │   │   ├── ckpt*/                # 每 50 万步检查点
 │   │   └── train_log.txt         # 单行文本训练日志
@@ -176,7 +176,7 @@ python train_phase6.py      # model3：16 环境，默认 1M 步
 命名约定：每个脚本都**读 `saves/` 里的上一阶段模型、写 `ppo_arm_reach.zip`**，训完手动改名：
 
 ```bash
-Copy-Item ppo_arm_reach.zip saves/phase34.zip
+Copy-Item ppo_arm_reach.zip saves/phase3-5.zip
 ```
 
 训练时看的东西（`saves/train_log.txt`，每 2 万步一行）：

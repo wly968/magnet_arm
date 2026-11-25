@@ -74,7 +74,7 @@ if __name__ == "__main__":
         render=False,
         verbose=1,
     )
-    model = PPO.load("./saves/phase2.zip", env=env, device="cpu", learning_rate=1e-4)
+    model = PPO.load("./saves/phase1-2.zip", env=env, device="cpu", learning_rate=1e-4)
     '''
     model = PPO(
         "MlpPolicy", env, verbose=1, learning_rate=LEARNING_RATE,

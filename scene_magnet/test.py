@@ -31,12 +31,9 @@ from envs.arm_env import ArmEnv
 
 # 候选文件（按顺序找第一个存在的）
 CANDIDATES = {
-    "model1": [os.path.join("saves", "phase2.zip"),
-               os.path.join("saves", "phase1.zip"),
-               "ppo_arm_reach.zip"],
-    "model2": [os.path.join("saves", "phase34.zip")],
-    "model3": [os.path.join("saves", "phase6.zip"),
-               os.path.join("saves", "phase6_home.zip")],
+    "model1": [os.path.join("saves", "phase1-2.zip")],
+    "model2": [os.path.join("saves", "phase3-5.zip")],
+    "model3": [os.path.join("saves", "phase6.zip")],
 }
 
 # 每个阶段用的 (dist, angle, still)
@@ -176,7 +173,7 @@ def main():
     p3 = None if args.only in ("12", "125") else find_model("model3", args.m3)
 
     if p1 is None:
-        print("❌ 没有可用模型：需要 ppo_arm_reach.zip 或 saves/phase1.zip")
+        print("❌ 没有可用模型：需要 saves/phase1-2.zip")
         return
 
     if p2 is None:

@@ -58,17 +58,17 @@ def make_env(model1, model2):
 
 if __name__ == "__main__":
     device = "cpu"
-    m1_path = os.path.join(SAVES, "phase2.zip")
+    m1_path = os.path.join(SAVES, "phase1-2.zip")
     if not os.path.exists(m1_path):
         m1_path = os.path.join(HERE, "ppo_arm_reach.zip")
-    m2_path = os.path.join(SAVES, "phase34.zip")
+    m2_path = os.path.join(SAVES, "phase3-5.zip")
     if not os.path.exists(m2_path):
-        m2_path = os.path.join(SAVES, "phase34_retract.zip")
+        m2_path = os.path.join(HERE, "ppo_arm_reach.zip")
 
     model1 = PPO.load(m1_path, device=device)
     print(f"model1: {os.path.basename(m1_path)} | obs {model1.observation_space.shape}")
     if not os.path.exists(m2_path):
-        raise SystemExit("缺少 saves/phase34.zip，请先跑 train_phase34.py")
+        raise SystemExit("缺少 saves/phase3-5.zip，请先跑 train_phase34.py")
     model2 = PPO.load(m2_path, device=device)
     print(f"model2: {os.path.basename(m2_path)} | obs {model2.observation_space.shape}")
 

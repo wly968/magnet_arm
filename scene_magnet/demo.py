@@ -35,9 +35,9 @@ TH_PHASE6 = (0.060, 0.940, 0)
 SPAWN_X = (-1.180, -1.050)
 
 CANDIDATES = {
-    "model1": ["saves/phase2.zip", "saves/phase1.zip"],
-    "model2": ["saves/phase34.zip"],
-    "model3": ["saves/phase6.zip", "saves/phase6_home.zip"],
+    "model1": ["saves/phase1-2.zip"],
+    "model2": ["saves/phase3-5.zip"],
+    "model3": ["saves/phase6.zip"],
 }
 
 
@@ -147,7 +147,7 @@ def main():
 
     models = load_policies()
     if models[0] is None:
-        raise SystemExit("缺少 model1（saves/phase2.zip）")
+        raise SystemExit("缺少 model1（saves/phase1-2.zip）")
 
     env = ArmEnv()
     env.smooth_alpha = 0.5
