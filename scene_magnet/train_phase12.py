@@ -25,8 +25,9 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 
-from envs.arm_env import (ArmEnv, CurriculumCallback, PhaseTrackerCallback,
-                          WaitAwareMonitor, DiagCallback, TrainLogCallback)
+from envs.arm_env import ArmEnv
+from callbacks import (CurriculumCallback, PhaseTrackerCallback,
+                       DiagCallback, TrainLogCallback)
 
 N_ENVS = 24
 TOTAL_STEPS = 1000_000   # 1.5M 只够到 0.06 档，3M 才能到 0.04 档

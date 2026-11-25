@@ -23,8 +23,8 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 
-from envs.arm_env import (ArmEnv, WaitAwareMonitor, PhaseTrackerCallback,
-                          CurriculumCallback, PhaseCurriculumCallback)
+from envs.arm_env import ArmEnv, WaitAwareMonitor
+from callbacks import PhaseTrackerCallback, CurriculumCallback, PhaseCurriculumCallback
 from envs.phase6 import Phase6Env
 
 SAVES = os.path.join(HERE, "saves")
