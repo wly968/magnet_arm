@@ -35,3 +35,8 @@ scene/
 # 实验目录里的旧模型备份与渲染图
 tools/retrain/*.zip
 tools/*.png
+
+# 中间检查点与评测产物（本地可再生成，不入库）
+scene_magnet/saves/ckpt*/
+scene_magnet/saves/best_*/
+scene_magnet/saves/eval_logs*/
