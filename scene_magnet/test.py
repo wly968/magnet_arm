@@ -188,6 +188,7 @@ def main():
     else:
         env = ArmEnv()
         target, mode = 7, "全流程（三模型）"
+    env.terminate_on_grasp = False    # 接力：抓完继续
     env.smooth_alpha = 0.5
 
     print(f"\n模式：{mode}")

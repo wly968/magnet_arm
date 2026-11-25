@@ -509,11 +509,13 @@ class ArmEnv(gym.Env):
         self.lost_x = 0.28                             # 超过此 x 才算滑出带（不要在任务中途丢目标）
         self.pool_spawn_x = (-1.18, -1.05)             # 池模式下新方块从 A 带最左端投放
         self.max_on_belt = 3                           # 带上最多同时几个，避免堆到手臂够不到
-        self.stopper = True                            # 挡料器：phase 0 时最前方块停在 arrive_x
+        self.stopper = False                           # 挡料器（默认关：方块连续流动，不停顿）
         self.min_gap = 0.09                            # 方块之间的最小间距（m）
         self.min_phase0_steps = 25                     # 连续作业时 phase 0 至少停留几步（等手臂停稳）
         self.box_pos = np.zeros(3)
         self.attached = False       # phase2 后锁定到末端，phase5 后解锁
+        # phase 2 成功是否结束回合：训练 model1 要 True；接力/演示要 False
+        self.terminate_on_grasp = True
         self.carry_offset = 0.06
         self.smooth_alpha = 0.0      # >0 时对动作做低通滤波，抑制“勾一下”
         # IK 基准 + RL 残差（phase 1/2）
@@ -530,7 +532,7 @@ class ArmEnv(gym.Env):
         self.belt_dir = np.array([1.0, 0.0, 0.0])        # 带 A 沿 +x
         self.spawn_mode = "uniform"                    # "uniform" | "gauss" | "fixed"
         # x：均匀随机（非高斯），方块直接出现在抓取带内 [-0.475, -0.100]
-        self.spawn_x_range = (-0.475, -0.200)
+        self.spawn_x_range = (-0.475, -0.100)
         self.spawn_x_mean = -0.650                       # 高斯分布均值（= 范围中心）
         self.spawn_x_std = 0.025                         # 高斯分布标准差（范围 ±0.05，两端仅轻微裁剪）
         self.spawn_x = -1.150                            # fixed 模式下的固定值
@@ -934,7 +936,7 @@ class ArmEnv(gym.Env):
                 self.attached = True              # 抓住：方块跟随末端
                 info["final_phase"] = 3
                 # ↓ 第三个值：True = 到此结束回合，False = 继续 phase 3（接力/演示用）
-                return self._get_obs(), reward, False, truncated, info
+                return self._get_obs(), reward, self.terminate_on_grasp, truncated, info
 
         elif self.phase == 3:
             # 抓后竖直抬起（动作由 _retract_action 确定性给出）
