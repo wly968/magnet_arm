@@ -16,28 +16,28 @@ from .arm_env import ArmEnv
 # 规则：从原课程第 5 档出发，之后**每一档只收紧 dist / angle / still 中的一项**，
 # 三项轮流推进，避免"三个条件同时变严"导致成功率断崖。
 FINE_SCHEDULE = [
-    (0.034, 0.965, 2),    #  1 起点：原课程第 5 档
-    (0.030, 0.965, 2),    #  2 dist
-    (0.030, 0.972, 2),    #  3 angle
-    (0.030, 0.972, 4),    #  4 still
-    (0.026, 0.972, 4),    #  5 dist
-    (0.026, 0.978, 4),    #  6 angle
-    (0.026, 0.978, 7),    #  7 still
-    (0.022, 0.978, 7),    #  8 dist
-    (0.022, 0.983, 7),    #  9 angle
-    (0.022, 0.983, 10),   # 10 still
-    (0.019, 0.983, 10),   # 11 dist
-    (0.019, 0.987, 10),   # 12 angle
-    (0.019, 0.987, 13),   # 13 still
-    (0.016, 0.987, 13),   # 14 dist
-    (0.016, 0.990, 13),   # 15 angle
-    (0.016, 0.990, 16),   # 16 still
-    (0.013, 0.990, 16),   # 17 dist
-    (0.013, 0.9925, 16),  # 18 angle
-    (0.013, 0.9925, 19),  # 19 still
-    (0.010, 0.9925, 19),  # 20 dist
-    (0.010, 0.994, 19),   # 21 angle
-    (0.010, 0.994, 21),   # 22 still（≈0.21 s 稳定，可接夹取）
+    (0.034, 0.965, 2, 0.05),    #  1 起点：原课程第 5 档
+    (0.030, 0.965, 2, 0.05),    #  2 dist
+    (0.030, 0.972, 2, 0.05),    #  3 angle
+    (0.030, 0.972, 4, 0.05),    #  4 still
+    (0.026, 0.972, 4, 0.05),    #  5 dist
+    (0.026, 0.978, 4, 0.05),    #  6 angle
+    (0.026, 0.978, 7, 0.05),    #  7 still
+    (0.022, 0.978, 7, 0.05),    #  8 dist
+    (0.022, 0.983, 7, 0.05),    #  9 angle
+    (0.022, 0.983, 10, 0.05),   # 10 still
+    (0.019, 0.983, 10, 0.05),   # 11 dist
+    (0.019, 0.987, 10, 0.05),   # 12 angle
+    (0.019, 0.987, 13, 0.05),   # 13 still
+    (0.016, 0.987, 13, 0.05),   # 14 dist
+    (0.016, 0.990, 13, 0.05),   # 15 angle
+    (0.016, 0.990, 16, 0.05),   # 16 still
+    (0.013, 0.990, 16, 0.05),   # 17 dist
+    (0.013, 0.9925, 16, 0.05),  # 18 angle
+    (0.013, 0.9925, 19, 0.05),  # 19 still
+    (0.010, 0.9925, 19, 0.05),  # 20 dist
+    (0.010, 0.994, 19, 0.05),   # 21 angle
+    (0.010, 0.994, 21, 0.05),   # 22 still（≈0.21 s 稳定，可接夹取）
 ]
 
 
@@ -46,6 +46,7 @@ class ArmFineEnv(ArmEnv):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.use_gravity_ff = True  # 关键：抵消 3~4 cm 的伺服静差，静态精度 41 mm -> 0.06 mm
         self.ik_iters = 15          # IK 残差：5 次 4.5 mm -> 15 次约 0.1 mm
         self.ik_scale = 0.008       # 残差 0.008 rad ≈ 4 mm/单位动作（原 0.02）
         self.band_tol = 0.012       # 高度带 ±1.2 cm（原 ±3 cm）
@@ -70,3 +71,11 @@ class ArmFineEnv(ArmEnv):
             + 0.4 * min(still_count, 8)     # 保持奖励：鼓励"贴住不动"
         )
         return float(reward)
+
+    def step(self, action):
+        """微调只训 phase 1/2：抓到即终止，不进入 model1 没学过的 phase 3-6。"""
+        obs, reward, terminated, truncated, info = super().step(action)
+        if self.phase >= 3 and not terminated:
+            terminated = True
+            info["final_phase"] = self.phase
+        return obs, reward, terminated, truncated, info

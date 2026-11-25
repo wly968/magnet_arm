@@ -120,6 +120,9 @@ class ArmEnv(gym.Env):
         self.ik_scale = 0.02         # 残差尺度 rad/单位动作（末端约 5 mm/步）
         self.ik_iters = 5
         self.band_tol = 0.03        # phase 2 高度带：box+band_tol < ee_z < target+band_tol
+        # 重力/科氏前馈：position 伺服有 3~4 cm 的静差，前馈后静态精度可达 0.1 mm
+        self.use_gravity_ff = False
+        self.actuator_kp = self.model.actuator_gainprm[: self.model.nu, 0].copy()
         self.phase2_reward_fn = None  # 微调环境可替换 phase 2 的奖励函数
         self.ik_lr = 1.0
         self.ik_damping = 1e-3
@@ -198,6 +201,16 @@ class ArmEnv(gym.Env):
         self.data.qpos[self.arm_qpos_adr] = q_save
         mujoco.mj_forward(self.model, self.data)
         return q
+
+    def _gravity_ff(self, q_ref):
+        """把目标构型下的重力/科氏力矩换算成位置伺服的指令偏置：ctrl = q_ref + tau/kp。"""
+        q_save = self.data.qpos[self.arm_qpos_adr].copy()
+        self.data.qpos[self.arm_qpos_adr] = np.asarray(q_ref, dtype=np.float64)
+        mujoco.mj_forward(self.model, self.data)
+        tau = self.data.qfrc_bias[self.arm_dof_adr].copy()
+        self.data.qpos[self.arm_qpos_adr] = q_save
+        mujoco.mj_forward(self.model, self.data)
+        return np.asarray(q_ref, dtype=np.float64) + tau / self.actuator_kp
 
     def _retract_action(self, target_z):
         """确定性抬升：保持当前关节，用肩关节闭环把末端抬到 target_z。"""
@@ -427,6 +440,8 @@ class ArmEnv(gym.Env):
 
         if self.phase in self.ik_phases:
             q_ref = self._ik_target_q(self._target())
+            if self.use_gravity_ff:
+                q_ref = self._gravity_ff(q_ref)
             self.data.ctrl[:] = q_ref + action * self.ik_scale
         else:
             self.data.ctrl[:] = self.home_ctrl + action * self.ctrl_scale
