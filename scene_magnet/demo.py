@@ -133,14 +133,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--headless", type=float, default=0.0,
                     help="不开窗口，按给定秒数空跑自检")
-    ap.add_argument("--interval", type=float, default=2.0,
-                    help="两个方块之间的停顿（秒）")
+    ap.add_argument("--interval", type=float, default=0.0,
+                    help="回合之间的停顿秒数（0 = 不停，连续跑）")
     ap.add_argument("--episodes", type=int, default=0,
                     help="跑多少个回合后退出（0 = 一直跑）")
     ap.add_argument("--cubes", type=int, default=1,
                     help="方块池大小：1=单方块（稳）；>1=连续投放（实验性，偶尔漏一个）")
-    ap.add_argument("--spawn-period", type=float, default=2.0,
-                    help="每隔多少秒投放一个新方块")
+    ap.add_argument("--spawn-period", type=float, default=1.5,
+                    help="每隔多少秒投放一个新方块（1.5 以下可保证队列里总有货，手臂不用等）")
     ap.add_argument("--speed", type=float, default=2.0,
                     help="仿真倍速：每个渲染帧对应 60*speed 分之一秒的睡眠")
     args = ap.parse_args()
