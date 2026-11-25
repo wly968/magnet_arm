@@ -525,7 +525,9 @@ class ArmEnv(gym.Env):
         self.beltB_speed = 0.8                           # 放料后方块沿 B 带滑向篮子
         self.beltB_end_y = -1.18                         # 超过此位置视为进入篮子
         self.basket_pos = np.array([0.65, -1.34, 0.375])
-        self.collect_after_place = True
+        # phase 6 成功是否要求方块已滑入篮子：工业上『回原位』与『下游入筐』是两件事，
+        # 方块交给 B 带自己滑走即可，故默认 False（手臂停稳即结束回合）
+        self.collect_after_place = False
         self.released = False
         self.collected = False
         self.prev_cmd = np.zeros(4, dtype=np.float64)
@@ -785,7 +787,7 @@ class ArmEnv(gym.Env):
                 self.still_count = 0
                 self.attached = True              # 抓住：方块跟随末端
                 info["final_phase"] = 3
-                # ↓ 第三个值：True = 到此结束回合，False = 继续 phase 3
+                # ↓ 第三个值：True = 到此结束回合，False = 继续 phase 3（接力/演示用）
                 return self._get_obs(), reward, False, truncated, info
 
         elif self.phase == 3:

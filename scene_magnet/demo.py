@@ -1,132 +1,210 @@
-"""场景演示：两条传送带 + 机械臂键盘遥控。
+"""连续抓取演示：A 带最左端每隔几秒随机掉落一个方块，三模型接力确定性抓取。
 
 运行：
-    cd scene
-    python demo.py              # 默认加载 show_scene.xml（展示版）
-    python demo.py --scene train_scene.xml   # 最简训练版
-    python demo.py --headless 5 # 不开窗口，空跑 5 秒做自检
+    cd scene_magnet
+    python demo.py                    # 打开窗口，连续演示
+    python demo.py --headless 10      # 不开窗口，空跑 10 秒自检
+    python demo.py --interval 2.0     # 每个回合之间停顿 2 秒再掉下一个方块
 
-键盘（每次按键步进一次，可连按）：
-    A / D   底座左转 / 右转
-    W / S   大臂上抬 / 下压
-    Q / E   小臂收 / 伸
-    Z / X   腕部上 / 下
-    空格     夹爪开 / 合
-    R       回到初始姿态
-
-（机械臂底座已固定，没有滑轨平移了。）
-
-传送带由 belts.apply_conveyors 驱动，见 belts.py。
+流程：
+    A 带最左端随机刷新方块 -> 手臂在 home 等它送到 -> 抓取 -> 搬运 -> 放料
+    -> 回原位（方块交给 B 带自己滑进篮子）-> 停顿 interval 秒 -> 下一个
 """
-
 import argparse
-import collections
 import os
+import sys
 import time
 
 import mujoco
 import mujoco.viewer
 import numpy as np
 
-from envs.belts import BELTS, apply_conveyors
-
 HERE = os.path.dirname(os.path.abspath(__file__))
-HOME = np.array([1.57, -1.15, 2.0, 0.725])
-GRIPPER_OPEN = (0.030, -0.030)
-GRIPPER_CLOSED = (0.000, 0.000)
+sys.path.append(HERE)
 
-# GLFW 键码
-KEY_A, KEY_D = 65, 68
-KEY_W, KEY_S = 87, 83
-KEY_Q, KEY_E = 81, 69
-KEY_Z, KEY_X = 90, 88
-KEY_SPACE, KEY_R = 32, 82
+from stable_baselines3 import PPO
+from envs.arm_env import ArmEnv
 
-# 每个按键对应 (ctrl 下标, 增量)：0=yaw, 1=shoulder, 2=elbow, 3=wrist
-KEY_ACTIONS = {
-    KEY_A: (0, -0.05), KEY_D: (0, +0.05),
-    KEY_W: (1, -0.05), KEY_S: (1, +0.05),
-    KEY_Q: (2, -0.05), KEY_E: (2, +0.05),
-    KEY_Z: (3, -0.05), KEY_X: (3, +0.05),
+# ---- 接力用的阈值（与 test.py 一致）----
+TH_PHASE1 = (0.045, 0.950, 0)
+TH_PHASE2 = (0.032, 0.960, 1)
+TH_PHASE35 = (0.034, 0.965, 2)
+TH_PHASE6 = (0.060, 0.940, 0)
+
+# 方块在 A 带最左端的刷新区间（带 A 覆盖 x∈[-1.20, 0.30]）
+SPAWN_X = (-1.180, -1.050)
+
+CANDIDATES = {
+    "model1": ["saves/phase2.zip", "saves/phase1.zip"],
+    "model2": ["saves/phase34.zip"],
+    "model3": ["saves/phase6.zip", "saves/phase6_home.zip"],
 }
 
 
-def clip_ctrl(model, data):
-    for i in range(model.nu):
-        lo, hi = model.actuator_ctrlrange[i]
-        data.ctrl[i] = np.clip(data.ctrl[i], lo, hi)
+class ObsAdapter:
+    """观测维度不一致时：多则裁剪，少则末尾补零。"""
+
+    def __init__(self, model):
+        self.model = model
+        self.dim = int(model.observation_space.shape[0])
+
+    def predict(self, obs, deterministic=True):
+        o = np.asarray(obs, dtype=np.float32)
+        if o.shape[-1] > self.dim:
+            o = o[..., : self.dim]
+        elif o.shape[-1] < self.dim:
+            o = np.concatenate(
+                [o, np.zeros(o.shape[:-1] + (self.dim - o.shape[-1],), dtype=np.float32)], axis=-1)
+        return self.model.predict(o, deterministic=deterministic)
+
+
+def find_model(name):
+    for rel in CANDIDATES[name]:
+        p = os.path.join(HERE, rel)
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def load_policies():
+    models = []
+    for name in ("model1", "model2", "model3"):
+        p = find_model(name)
+        if p is None:
+            print(f"⚠️  找不到 {name}（{CANDIDATES[name]}）")
+            models.append(None)
+            continue
+        m = PPO.load(p, device="cpu")
+        print(f"✅ {name}: {os.path.basename(p)}  obs {m.observation_space.shape}")
+        models.append(ObsAdapter(m))
+    return models
+
+
+def pick_policy(models, phase):
+    m1, m2, m3 = models
+    if phase < 3:
+        return m1
+    if phase < 6:
+        return m2 if m2 is not None else m1
+    return m3 if m3 is not None else (m2 if m2 is not None else m1)
+
+
+def apply_thresholds(env, phase, entry=False):
+    if phase <= 1:
+        d, a, s = TH_PHASE1
+        env.phase1_dist, env.phase1_angle = d, a
+    elif phase == 2:
+        d, a, s = TH_PHASE2
+    elif phase < 6:
+        d, a, s = TH_PHASE35
+    else:
+        d, a, s = TH_PHASE6
+    env._set_dist(d)
+    env._set_angle1(a)
+    env._set_still_count(s)
+    if entry:
+        env.phase_entry_steps = 6
+
+
+def run_episode(env, models):
+    """跑一个完整回合，返回 (结束 phase, 步数)。"""
+    obs, _ = env.reset()
+    apply_thresholds(env, env.phase)
+    last_phase = env.phase
+    steps = 0
+    limit = env.max_steps + env.max_wait_steps + 10
+    for steps in range(limit):
+        if env.phase != last_phase:
+            apply_thresholds(env, env.phase, entry=True)
+        last_phase = env.phase
+        policy = pick_policy(models, env.phase)
+        action, _ = policy.predict(obs, deterministic=True)
+        obs, reward, terminated, truncated, info = env.step(action)
+        if terminated or truncated:
+            break
+    return env.phase, steps + 1
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--headless", type=float, default=0.0,
-                        help="不打开窗口，按给定秒数空跑")
-    parser.add_argument("--speed", type=float, default=1.0,
-                        help="传送带速度倍率")
-    parser.add_argument("--scene", default="show_scene.xml",
-                        help="要加载的模型文件：show_scene.xml（默认）或 train_scene.xml")
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--headless", type=float, default=0.0,
+                    help="不开窗口，按给定秒数空跑自检")
+    ap.add_argument("--interval", type=float, default=2.0,
+                    help="两个方块之间的停顿（秒）")
+    ap.add_argument("--episodes", type=int, default=0,
+                    help="跑多少个回合后退出（0 = 一直跑）")
+    ap.add_argument("--speed", type=float, default=2.0,
+                    help="仿真倍速：每个渲染帧对应 60*speed 分之一秒的睡眠")
+    args = ap.parse_args()
 
-    model = mujoco.MjModel.from_xml_path(os.path.join(HERE, "assets", "models", args.scene))
-    data = mujoco.MjData(model)
+    models = load_policies()
+    if models[0] is None:
+        raise SystemExit("缺少 model1（saves/phase2.zip）")
 
-    # 传送带速度倍率
-    belts = [dict(b, speed=b["speed"] * args.speed) for b in BELTS]
-
-    mujoco.mj_resetDataKeyframe(model, data, 0)
-    data.ctrl[:] = HOME
-    mujoco.mj_forward(model, data)
+    env = ArmEnv()
+    env.smooth_alpha = 0.5
+    env.spawn_mode = "uniform"
+    env.spawn_x_range = SPAWN_X          # 只在 A 带最左端刷新
+    print(f"A 带刷新区间 x∈[{SPAWN_X[0]:.2f}, {SPAWN_X[1]:.2f}]，y∈"
+          f"[{env.spawn_y_range[0]:.2f}, {env.spawn_y_range[1]:.2f}]，"
+          f"带速 {env.cube_speed:.2f} m/s")
+    print(f"回原位后立即结束（不等入篮）：collect_after_place = {env.collect_after_place}")
 
     if args.headless > 0:
-        n = int(args.headless / model.opt.timestep)
-        for _ in range(n):
-            apply_conveyors(model, data, belts)
-            mujoco.mj_step(model, data)
-        print("headless OK")
-        for i in range(3):
-            print(f"  cube_{i}: {np.round(data.xpos[model.body(f'cube_{i}').id], 3)}")
-        print("  nan:", bool(np.isnan(data.qacc).any()))
+        t0 = time.time()
+        k = 0
+        while time.time() - t0 < args.headless:
+            phase, n = run_episode(env, models)
+            k += 1
+            print(f"  [{k}] phase {phase} | {n} 步 | {time.time()-t0:.1f}s")
+            if args.episodes and k >= args.episodes:
+                break
+            time.sleep(args.interval)
+        print(f"自检完成：{k} 个回合")
         return
 
-    pending = collections.deque()
-    state = {"gripper_open": True}
+    with mujoco.viewer.launch_passive(env.model, env.data,
+                                      show_left_ui=False, show_right_ui=False) as viewer:
+        viewer.cam.distance = 2.5
+        viewer.cam.elevation = -30
+        viewer.cam.azimuth = 90
 
-    def on_key(keycode):
-        pending.append(int(keycode))
-
-    with mujoco.viewer.launch_passive(model, data, key_callback=on_key,show_left_ui=False, show_right_ui=False) as viewer:
-        viewer.show_left_ui = False
-        viewer.show_right_ui = False
-        
-        viewer.cam.distance = 1.9
-        viewer.cam.elevation = -28
-        viewer.cam.azimuth = 125
-        viewer.cam.lookat[:] = [0.15, 0.10, 0.30]
-
-        frame_dt = 0.01
-        print("窗口已打开。键盘控制见 demo.py 顶部说明，Esc 退出。")
+        obs, _ = env.reset()
+        apply_thresholds(env, env.phase)
+        last_phase = env.phase
+        step_count = 0
+        episode_reward = 0.0
+        k = 0
 
         while viewer.is_running():
-            t0 = time.perf_counter()
-
-            # 处理这一帧收到的按键
-            while pending:
-                key = pending.popleft()
-                if key == KEY_R:
-                    data.ctrl[:] = HOME
-                elif key in KEY_ACTIONS:
-                    idx, delta = KEY_ACTIONS[key]
-                    data.ctrl[idx] += delta
-                    clip_ctrl(model, data)
-
-            apply_conveyors(model, data, belts)
-            for _ in range(int(frame_dt / model.opt.timestep)):
-                mujoco.mj_step(model, data)
-
+            if env.phase != last_phase:
+                apply_thresholds(env, env.phase, entry=True)
+            last_phase = env.phase
+            policy = pick_policy(models, env.phase)
+            action, _ = policy.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, info = env.step(action)
+            episode_reward += reward
+            step_count += 1
             viewer.sync()
-            rest = frame_dt - (time.perf_counter() - t0)
-            if rest > 0:
-                time.sleep(rest)
+            time.sleep(1.0 / (60.0 * max(0.1, args.speed)))
+
+            if terminated or truncated:
+                k += 1
+                ok = "✅ 完成" if env.phase >= 7 else ("⏱️ 超时" if truncated else "⚠️ 结束")
+                print(f"[{k}] {ok} | phase {env.phase} | {step_count} 步 | 奖励 {episode_reward:.1f}")
+                # 停顿几秒（方块此刻还在 B 带上滑向篮子），然后掉下一个
+                t_end = time.time() + args.interval
+                while viewer.is_running() and time.time() < t_end:
+                    viewer.sync()
+                    time.sleep(1 / 60)
+                if args.episodes and k >= args.episodes:
+                    break
+                obs, _ = env.reset()
+                apply_thresholds(env, env.phase)
+                last_phase = env.phase
+                step_count = 0
+                episode_reward = 0.0
+        print(f"演示结束：{k} 个回合")
 
 
 if __name__ == "__main__":
