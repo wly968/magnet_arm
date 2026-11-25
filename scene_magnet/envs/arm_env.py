@@ -119,6 +119,8 @@ class ArmEnv(gym.Env):
         self.ik_phases = (1, 2)
         self.ik_scale = 0.02         # 残差尺度 rad/单位动作（末端约 5 mm/步）
         self.ik_iters = 5
+        self.band_tol = 0.03        # phase 2 高度带：box+band_tol < ee_z < target+band_tol
+        self.phase2_reward_fn = None  # 微调环境可替换 phase 2 的奖励函数
         self.ik_lr = 1.0
         self.ik_damping = 1e-3
         # 视觉不确定性占位（接入视觉前恒为 0）：σx, σy, σvx, σvy
@@ -499,12 +501,16 @@ class ArmEnv(gym.Env):
                 return self._get_obs(), reward, False, False, info
 
         elif self.phase == 2:
-            reward = -dist * 4.0 -  5.0 * (1.0 - angle1) - action_change * 0.3 - 0.2 + 0.3*min(self.still_count,5)
+            if self.phase2_reward_fn is not None:
+                reward = self.phase2_reward_fn(dist, angle1, action_change, self.still_count)
+            else:
+                reward = (-dist * 4.0 - 5.0 * (1.0 - angle1) - action_change * 0.3 - 0.2
+                          + 0.3 * min(self.still_count, 5))
             # ---- 诊断统计：分别记录各子条件的满足情况 ----
             _d_ok = dist < self.dist_threshold
             _a_ok = angle1 > self.angle1_threshold
             _r_ok = float(rel) < self.rel_threshold
-            _b_ok = (ee_pos[2] < target_pos[2] + 0.03) and (ee_pos[2] > float(self.box_pos[2]) + 0.03)
+            _b_ok = (ee_pos[2] < target_pos[2] + self.band_tol) and (ee_pos[2] > float(self.box_pos[2]) + self.band_tol)
             _g = self.diag
             _g["n"] += 1
             _g["dist"] += int(_d_ok)
@@ -522,11 +528,11 @@ class ArmEnv(gym.Env):
             if _pos:
                 _g["sum_rel_pos"] += float(rel)
             # 允许略压过目标平面，但末端不得低于方块顶面 5cm（避免圆盘嵌进方块）
-            if dist < self.dist_threshold and angle1 > self.angle1_threshold and np.linalg.norm(self.ee_val-self.box_vel)<self.rel_threshold and ee_pos[2] < target_pos[2] + 0.03 and ee_pos[2] > self.box_pos[2] + 0.03:
+            if dist < self.dist_threshold and angle1 > self.angle1_threshold and np.linalg.norm(self.ee_val-self.box_vel)<self.rel_threshold and ee_pos[2] < target_pos[2] + self.band_tol and ee_pos[2] > self.box_pos[2] + self.band_tol:
                 self.still_count += 1
-            if not (dist < self.dist_threshold and angle1 > self.angle1_threshold and np.linalg.norm(self.ee_val-self.box_vel)<self.rel_threshold and ee_pos[2] < target_pos[2] + 0.03 and ee_pos[2] > self.box_pos[2] + 0.03):
+            if not (dist < self.dist_threshold and angle1 > self.angle1_threshold and np.linalg.norm(self.ee_val-self.box_vel)<self.rel_threshold and ee_pos[2] < target_pos[2] + self.band_tol and ee_pos[2] > self.box_pos[2] + self.band_tol):
                 self.still_count = 0
-            if dist < self.dist_threshold and angle1 > self.angle1_threshold and ee_pos[2] < target_pos[2] + 0.03 and ee_pos[2] > self.box_pos[2] + 0.03 and self.still_count > self.still_count_threshold :
+            if dist < self.dist_threshold and angle1 > self.angle1_threshold and ee_pos[2] < target_pos[2] + self.band_tol and ee_pos[2] > self.box_pos[2] + self.band_tol and self.still_count > self.still_count_threshold :
                 reward += 30.0
                 self.phase = 3
                 self.still_count = 0
