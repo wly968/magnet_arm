@@ -489,6 +489,18 @@ class ArmEnv(gym.Env):
         self.box_body_id = self.model.body("cube_0").id
         self.box_geom_id = self.model.geom("cube_0_geom").id
         self.mocap_id = int(self.model.body_mocapid[self.box_body_id])   # 方块是 mocap
+        # ---- 方块池（n_cubes=1 时行为与原来完全一致）----
+        self.n_cubes = 1
+        self.cube_ids = [self.mocap_id]
+        self.cube_state = ["belt"]
+        self.park_pos = np.array([0.0, 0.0, -5.0])     # 停放到场景外
+        self.spawn_period = 200                        # 投放间隔（步，10 ms/步 -> 2 s）
+        self.spawn_timer = 0
+        self.active_idx = 0
+        self.carried_idx = -1
+        self.lost_x = 0.28                             # 超过此 x 才算滑出带（不要在任务中途丢目标）
+        self.pool_spawn_x = (-1.18, -1.05)             # 池模式下新方块从 A 带最左端投放
+        self.max_on_belt = 3                           # 带上最多同时几个，避免堆到手臂够不到
         self.box_pos = np.zeros(3)
         self.attached = False       # phase2 后锁定到末端，phase5 后解锁
         self.carry_offset = 0.06
@@ -598,6 +610,101 @@ class ArmEnv(gym.Env):
             return self.drop_pos
         return self.home_ee            # 回到初始位置
 
+    # ---------------- 方块池 ----------------
+    def _setup_cube_pool(self, spawn_x, spawn_y):
+        """初始化 n_cubes 个方块：全部停放到远处，只把第 0 个放到 A 带。"""
+        names = [f"cube_{i}" for i in range(self.n_cubes)]
+        self.cube_ids = [int(self.model.body_mocapid[self.model.body(n).id]) for n in names]
+        self.cube_state = ["parked"] * self.n_cubes
+        for mid in self.cube_ids:
+            self.data.mocap_pos[mid] = self.park_pos
+            self.data.mocap_quat[mid] = [1.0, 0.0, 0.0, 0.0]
+        self.cube_state[0] = "belt"
+        x0 = float(self.np_random.uniform(*self.pool_spawn_x))
+        self.data.mocap_pos[self.cube_ids[0]] = [x0, spawn_y, 0.375]
+        self.active_idx = 0
+        self.carried_idx = -1
+        self.spawn_timer = 0
+        self.mocap_id = self.cube_ids[0]
+
+    def _park_cube(self, i):
+        self.cube_state[i] = "parked"
+        self.data.mocap_pos[self.cube_ids[i]] = self.park_pos
+
+    def _step_cube_pool(self, dt):
+        """多个方块：定时投放、沿带前进、被抓住跟随末端、入篮后回收。"""
+        # 抓取/释放的状态迁移
+        if self.attached and self.carried_idx < 0:
+            i = self.active_idx
+            if self.cube_state[i] == "belt":
+                self.cube_state[i] = "carried"
+                self.carried_idx = i
+        if getattr(self, "released", False) and self.carried_idx >= 0 \
+                and self.cube_state[self.carried_idx] == "carried":
+            self.cube_state[self.carried_idx] = "basket"
+
+        # 定时投放
+        self.spawn_timer += 1
+        n_on_belt = sum(1 for st in self.cube_state if st == "belt")
+        if self.spawn_timer >= self.spawn_period and n_on_belt < self.max_on_belt:
+            self.spawn_timer = 0
+            for i, st in enumerate(self.cube_state):
+                if st == "parked":
+                    x = float(self.np_random.uniform(*self.pool_spawn_x))
+                    y = float(self.np_random.uniform(*self.spawn_y_range))
+                    self.cube_state[i] = "belt"
+                    self.data.mocap_pos[self.cube_ids[i]] = [x, y, 0.375]
+                    self.data.mocap_quat[self.cube_ids[i]] = [1.0, 0.0, 0.0, 0.0]
+                    break
+
+        # 运动
+        for i, st in enumerate(self.cube_state):
+            mid = self.cube_ids[i]
+            if st == "belt":
+                mp = self.data.mocap_pos[mid]
+                mp[:] = mp + self.belt_dir * self.cube_speed * dt
+                if mp[0] > self.lost_x:
+                    self._park_cube(i)
+            elif st == "basket":
+                mp = self.data.mocap_pos[mid]
+                mp[:] = mp + self.beltB_dir * self.beltB_speed * dt
+                if mp[1] <= self.beltB_end_y:
+                    self._park_cube(i)
+            elif st == "carried" and self.attached:
+                ee = self.data.site_xpos[self.ee_id]
+                self.data.mocap_pos[mid] = [float(ee[0]), float(ee[1]),
+                                            float(ee[2]) - self.carry_offset]
+                self.data.mocap_quat[mid] = [1.0, 0.0, 0.0, 0.0]
+
+        # 选目标：被抓住就是它；否则取带上最靠前的那个（x 最大，因为带沿 +x）
+        if self.attached and self.carried_idx >= 0:
+            self.mocap_id = self.cube_ids[self.carried_idx]
+        else:
+            if self.carried_idx >= 0:
+                self.carried_idx = -1
+            belt = [i for i, st in enumerate(self.cube_state) if st == "belt"]
+            if belt:
+                i = max(belt, key=lambda k: float(self.data.mocap_pos[self.cube_ids[k]][0]))
+                self.active_idx = i
+                self.mocap_id = self.cube_ids[i]
+            else:
+                self.mocap_id = -1
+        self.collected = not any(st in ("belt", "basket") for st in self.cube_state)
+
+    def next_cycle(self):
+        """连续作业：不重置仿真与方块池，只清回合状态，接着抓下一个。"""
+        self.phase = 0
+        self.steps = 0
+        self.wait_steps = 0
+        self.still_count = 0
+        self.attached = False
+        self.released = False
+        self.retract_steps = 0
+        self.phase_entry_steps = 6
+        self.prev_cmd = np.zeros(4)
+        self.prev_action = np.zeros(4)
+        self.prev_action2 = np.zeros(4)
+
     def reset(self, seed=None, option=None):
         super().reset(seed=seed)
 
@@ -617,7 +724,9 @@ class ArmEnv(gym.Env):
         self.attached = False
         self.released = False
         self.collected = False
-        if self.mocap_id >= 0:
+        if self.n_cubes > 1:
+            self._setup_cube_pool(spawn_x, spawn_y)
+        elif self.mocap_id >= 0:
             self.data.mocap_pos[self.mocap_id] = self.box_pos
             self.data.mocap_quat[self.mocap_id] = [1.0, 0.0, 0.0, 0.0]   # 保持竖直
         mujoco.mj_forward(self.model, self.data)
@@ -665,7 +774,9 @@ class ArmEnv(gym.Env):
         prev_box = self.box_pos.copy()
 
         dt = self.model.opt.timestep * 5
-        if self.released and not self.collected and self.mocap_id >= 0:
+        if self.n_cubes > 1:
+            self._step_cube_pool(dt)
+        elif self.released and not self.collected and self.mocap_id >= 0:
             # 放到 B 带后：沿 -y 滑向收集篮
             mp = self.data.mocap_pos[self.mocap_id]
             mp[:] = mp + self.beltB_dir * self.beltB_speed * dt

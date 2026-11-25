@@ -106,9 +106,13 @@ def apply_thresholds(env, phase, entry=False):
         env.phase_entry_steps = 6
 
 
-def run_episode(env, models):
-    """跑一个完整回合，返回 (结束 phase, 步数)。"""
-    obs, _ = env.reset()
+def run_episode(env, models, do_reset=True):
+    """跑一个完整回合，返回 (结束 phase, 步数)。do_reset=False 时续接上一个回合。"""
+    if do_reset or env.n_cubes == 1:
+        obs, _ = env.reset()
+    else:
+        env.next_cycle()
+        obs = env._get_obs()
     apply_thresholds(env, env.phase)
     last_phase = env.phase
     steps = 0
@@ -133,6 +137,10 @@ def main():
                     help="两个方块之间的停顿（秒）")
     ap.add_argument("--episodes", type=int, default=0,
                     help="跑多少个回合后退出（0 = 一直跑）")
+    ap.add_argument("--cubes", type=int, default=1,
+                    help="方块池大小：1=单方块（稳）；>1=连续投放（实验性，偶尔漏一个）")
+    ap.add_argument("--spawn-period", type=float, default=2.0,
+                    help="每隔多少秒投放一个新方块")
     ap.add_argument("--speed", type=float, default=2.0,
                     help="仿真倍速：每个渲染帧对应 60*speed 分之一秒的睡眠")
     args = ap.parse_args()
@@ -143,9 +151,10 @@ def main():
 
     env = ArmEnv()
     env.smooth_alpha = 0.5
-    env.spawn_mode = "uniform"
-    env.spawn_x_range = SPAWN_X          # 只在 A 带最左端刷新
-    print(f"A 带刷新区间 x∈[{SPAWN_X[0]:.2f}, {SPAWN_X[1]:.2f}]，y∈"
+    env.n_cubes = args.cubes            # 方块池：连续投放
+    env.spawn_period = max(1, int(round(args.spawn_period / 0.01)))
+    env.pool_spawn_x = SPAWN_X
+    print(f"方块池 {env.n_cubes} 个，投放间隔 {args.spawn_period:.1f}s，投放点 x∈[{SPAWN_X[0]:.2f}, {SPAWN_X[1]:.2f}]，y∈"
           f"[{env.spawn_y_range[0]:.2f}, {env.spawn_y_range[1]:.2f}]，"
           f"带速 {env.cube_speed:.2f} m/s")
     print(f"回原位后立即结束（不等入篮）：collect_after_place = {env.collect_after_place}")
@@ -154,7 +163,7 @@ def main():
         t0 = time.time()
         k = 0
         while time.time() - t0 < args.headless:
-            phase, n = run_episode(env, models)
+            phase, n = run_episode(env, models, do_reset=(k == 0))
             k += 1
             print(f"  [{k}] phase {phase} | {n} 步 | {time.time()-t0:.1f}s")
             if args.episodes and k >= args.episodes:
@@ -199,7 +208,11 @@ def main():
                     time.sleep(1 / 60)
                 if args.episodes and k >= args.episodes:
                     break
-                obs, _ = env.reset()
+                if env.n_cubes > 1:
+                    env.next_cycle()        # 池模式：不重置方块，接着抓下一个
+                    obs = env._get_obs()
+                else:
+                    obs, _ = env.reset()
                 apply_thresholds(env, env.phase)
                 last_phase = env.phase
                 step_count = 0

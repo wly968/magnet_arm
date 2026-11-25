@@ -162,6 +162,42 @@
       <geom name="cube_0_geom" type="box" size="0.025 0.025 0.025" mass="0.3" solref="0.02 1" solimp="0.9 0.95 0.001"
             material="cube" friction="1.0 0.02 0.002" condim="4" contype="0" conaffinity="0"/>
     </body>
+    <body name="cube_1" pos="-0.45 0.65 0.36" mocap="true">
+      <geom name="cube_1_geom" type="box" size="0.025 0.025 0.025" mass="0.3" solref="0.02 1" solimp="0.9 0.95 0.001"
+            material="cube" friction="1.0 0.02 0.002" condim="4" contype="0" conaffinity="0"/>
+    </body>
+    <body name="cube_2" pos="-0.45 0.65 0.36" mocap="true">
+      <geom name="cube_2_geom" type="box" size="0.025 0.025 0.025" mass="0.3" solref="0.02 1" solimp="0.9 0.95 0.001"
+            material="cube" friction="1.0 0.02 0.002" condim="4" contype="0" conaffinity="0"/>
+    </body>
+    <body name="cube_3" pos="-0.45 0.65 0.36" mocap="true">
+      <geom name="cube_3_geom" type="box" size="0.025 0.025 0.025" mass="0.3" solref="0.02 1" solimp="0.9 0.95 0.001"
+            material="cube" friction="1.0 0.02 0.002" condim="4" contype="0" conaffinity="0"/>
+    </body>
+    <body name="cube_4" pos="-0.45 0.65 0.36" mocap="true">
+      <geom name="cube_4_geom" type="box" size="0.025 0.025 0.025" mass="0.3" solref="0.02 1" solimp="0.9 0.95 0.001"
+            material="cube" friction="1.0 0.02 0.002" condim="4" contype="0" conaffinity="0"/>
+    </body>
+    <body name="cube_5" pos="-0.45 0.65 0.36" mocap="true">
+      <geom name="cube_5_geom" type="box" size="0.025 0.025 0.025" mass="0.3" solref="0.02 1" solimp="0.9 0.95 0.001"
+            material="cube" friction="1.0 0.02 0.002" condim="4" contype="0" conaffinity="0"/>
+    </body>
+    <body name="cube_6" pos="-0.45 0.65 0.36" mocap="true">
+      <geom name="cube_6_geom" type="box" size="0.025 0.025 0.025" mass="0.3" solref="0.02 1" solimp="0.9 0.95 0.001"
+            material="cube" friction="1.0 0.02 0.002" condim="4" contype="0" conaffinity="0"/>
+    </body>
+    <body name="cube_7" pos="-0.45 0.65 0.36" mocap="true">
+      <geom name="cube_7_geom" type="box" size="0.025 0.025 0.025" mass="0.3" solref="0.02 1" solimp="0.9 0.95 0.001"
+            material="cube" friction="1.0 0.02 0.002" condim="4" contype="0" conaffinity="0"/>
+    </body>
+    <body name="cube_8" pos="-0.45 0.65 0.36" mocap="true">
+      <geom name="cube_8_geom" type="box" size="0.025 0.025 0.025" mass="0.3" solref="0.02 1" solimp="0.9 0.95 0.001"
+            material="cube" friction="1.0 0.02 0.002" condim="4" contype="0" conaffinity="0"/>
+    </body>
+    <body name="cube_9" pos="-0.45 0.65 0.36" mocap="true">
+      <geom name="cube_9_geom" type="box" size="0.025 0.025 0.025" mass="0.3" solref="0.02 1" solimp="0.9 0.95 0.001"
+            material="cube" friction="1.0 0.02 0.002" condim="4" contype="0" conaffinity="0"/>
+    </body>
   </worldbody>
 
   <contact>
