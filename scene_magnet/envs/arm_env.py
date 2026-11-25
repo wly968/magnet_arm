@@ -514,8 +514,6 @@ class ArmEnv(gym.Env):
         self.min_phase0_steps = 25                     # 连续作业时 phase 0 至少停留几步（等手臂停稳）
         self.box_pos = np.zeros(3)
         self.attached = False       # phase2 后锁定到末端，phase5 后解锁
-        # phase 2 成功是否结束回合：训练 model1 要 True；接力/演示要 False
-        self.terminate_on_grasp = True
         self.carry_offset = 0.06
         self.smooth_alpha = 0.0      # >0 时对动作做低通滤波，抑制“勾一下”
         # IK 基准 + RL 残差（phase 1/2）
@@ -936,7 +934,7 @@ class ArmEnv(gym.Env):
                 self.attached = True              # 抓住：方块跟随末端
                 info["final_phase"] = 3
                 # ↓ 第三个值：True = 到此结束回合，False = 继续 phase 3（接力/演示用）
-                return self._get_obs(), reward, self.terminate_on_grasp, truncated, info
+                return self._get_obs(), reward, False, truncated, info
 
         elif self.phase == 3:
             # 抓后竖直抬起（动作由 _retract_action 确定性给出）

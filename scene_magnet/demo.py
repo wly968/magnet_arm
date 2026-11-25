@@ -150,7 +150,6 @@ def main():
         raise SystemExit("缺少 model1（saves/phase2.zip）")
 
     env = ArmEnv()
-    env.terminate_on_grasp = False    # 演示：抓完继续走完整个流程
     env.smooth_alpha = 0.5
     env.n_cubes = args.cubes            # 方块池：连续投放
     env.spawn_period = max(1, int(round(args.spawn_period / 0.01)))
