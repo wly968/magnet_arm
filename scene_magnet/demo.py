@@ -153,7 +153,8 @@ def main():
     env.smooth_alpha = 0.5
     env.n_cubes = args.cubes            # 方块池：连续投放
     env.spawn_period = max(1, int(round(args.spawn_period / 0.01)))
-    env.pool_spawn_x = SPAWN_X
+    env.pool_spawn_x = SPAWN_X        # 池模式投放点
+    env.spawn_x_range = SPAWN_X       # 单方块模式也从带左端出现
     print(f"方块池 {env.n_cubes} 个，投放间隔 {args.spawn_period:.1f}s，投放点 x∈[{SPAWN_X[0]:.2f}, {SPAWN_X[1]:.2f}]，y∈"
           f"[{env.spawn_y_range[0]:.2f}, {env.spawn_y_range[1]:.2f}]，"
           f"带速 {env.cube_speed:.2f} m/s")

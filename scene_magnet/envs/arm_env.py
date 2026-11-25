@@ -489,6 +489,14 @@ class ArmEnv(gym.Env):
         self.box_body_id = self.model.body("cube_0").id
         self.box_geom_id = self.model.geom("cube_0_geom").id
         self.mocap_id = int(self.model.body_mocapid[self.box_body_id])   # 方块是 mocap
+        # 场景里所有 cube_i 的 mocap id（用不到的要把它们藏起来，否则会停在 XML 默认位）
+        self.all_cube_ids = []
+        for i in range(64):
+            try:
+                bid = self.model.body(f"cube_{i}").id
+            except Exception:
+                break
+            self.all_cube_ids.append(int(self.model.body_mocapid[bid]))
         # ---- 方块池（n_cubes=1 时行为与原来完全一致）----
         self.n_cubes = 1
         self.cube_ids = [self.mocap_id]
@@ -726,7 +734,10 @@ class ArmEnv(gym.Env):
         self.collected = False
         if self.n_cubes > 1:
             self._setup_cube_pool(spawn_x, spawn_y)
-        elif self.mocap_id >= 0:
+        else:
+            for mid in self.all_cube_ids[1:]:      # 多余方块藏到场景外
+                self.data.mocap_pos[mid] = self.park_pos
+        if self.n_cubes == 1 and self.mocap_id >= 0:
             self.data.mocap_pos[self.mocap_id] = self.box_pos
             self.data.mocap_quat[self.mocap_id] = [1.0, 0.0, 0.0, 0.0]   # 保持竖直
         mujoco.mj_forward(self.model, self.data)
