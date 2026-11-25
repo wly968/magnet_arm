@@ -1,6 +1,6 @@
 """phase 1/2 精度微调：从 saves/phase1-2.zip 热启动，按 FINE_SCHEDULE 收紧 dwell。
 
-    python train_fine.py                 # 默认 80 万步
+    python train_fine.py                 # 默认 300 万步，22 档课程
     python train_fine.py --steps 400000  # 自定步数
 
 产物：`ppo_arm_reach.zip`（微调后的 model1，可复制成 saves/phase1-2.zip 使用）
@@ -38,7 +38,7 @@ def make_env():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--steps", type=int, default=800_000)
+    ap.add_argument("--steps", type=int, default=3_000_000)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--start-stage", type=int, default=0, help="从课程第几档开始（0 起）")
     args = ap.parse_args()
@@ -49,8 +49,8 @@ def main():
 
     # 微调课程：沿用同一套性能门控（确定性探测 30 局 + 连续 2 次达标）
     curriculum = CurriculumCallback(
-        min_steps=150_000, success_threshold=0.6,
-        probe_episodes=30, probe_every=150_000, confirm_passes=2,
+        min_steps=100_000, success_threshold=0.6,
+        probe_episodes=30, probe_every=100_000, confirm_passes=2,
         start_idx=args.start_stage,
     )
     curriculum.SCHEDULE = FINE_SCHEDULE          # 覆盖成精度档位

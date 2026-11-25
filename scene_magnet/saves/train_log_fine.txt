@@ -1,0 +1,23 @@
+# step stage thr(dist/angle/still/rel) probe pos relpos all mrel mdist mang mdz succ tout nan std ev kl
+19992 s1 thr=0.020/0.96/1/0.00 probe=nan% pos=2.1% relpos=0.0% all=0.0% mrel=0.047 mdist=0.033 mang=0.886 mdz=-0.023 succ=0% tout=100% nan=0% std=0.536 ev=0.25 kl=0.0004
+39984 s1 thr=0.020/0.96/1/0.00 probe=nan% pos=2.0% relpos=0.0% all=0.0% mrel=0.046 mdist=0.034 mang=0.884 mdz=-0.023 succ=0% tout=100% nan=0% std=0.536 ev=0.71 kl=0.0000
+59976 s1 thr=0.020/0.96/1/0.00 probe=nan% pos=2.0% relpos=0.0% all=0.0% mrel=0.047 mdist=0.034 mang=0.886 mdz=-0.023 succ=0% tout=100% nan=0% std=0.536 ev=0.75 kl=0.0000
+79968 s1 thr=0.020/0.96/1/0.00 probe=nan% pos=1.9% relpos=0.0% all=0.0% mrel=0.047 mdist=0.034 mang=0.880 mdz=-0.024 succ=0% tout=100% nan=0% std=0.536 ev=0.62 kl=0.0000
+99960 s1 thr=0.020/0.96/1/0.00 probe=nan% pos=2.0% relpos=0.0% all=0.0% mrel=0.047 mdist=0.034 mang=0.883 mdz=-0.024 succ=0% tout=100% nan=0% std=0.536 ev=0.55 kl=0.0000
+119952 s1 thr=0.020/0.96/1/0.00 probe=nan% pos=2.0% relpos=0.0% all=0.0% mrel=0.047 mdist=0.034 mang=0.877 mdz=-0.023 succ=0% tout=100% nan=0% std=0.536 ev=0.53 kl=0.0001
+139944 s1 thr=0.020/0.96/1/0.00 probe=nan% pos=1.9% relpos=0.0% all=0.0% mrel=0.046 mdist=0.034 mang=0.890 mdz=-0.024 succ=0% tout=100% nan=0% std=0.536 ev=0.52 kl=0.0001
+159936 s1 thr=0.020/0.96/1/0.00 probe=0% pos=2.0% relpos=0.0% all=0.0% mrel=0.047 mdist=0.034 mang=0.876 mdz=-0.023 succ=0% tout=100% nan=0% std=0.536 ev=0.51 kl=0.0004
+179928 s1 thr=0.020/0.96/1/0.00 probe=0% pos=1.9% relpos=0.0% all=0.0% mrel=0.046 mdist=0.034 mang=0.873 mdz=-0.024 succ=0% tout=100% nan=0% std=0.536 ev=0.48 kl=0.0000
+199920 s1 thr=0.020/0.96/1/0.00 probe=0% pos=2.0% relpos=0.0% all=0.0% mrel=0.047 mdist=0.034 mang=0.875 mdz=-0.023 succ=0% tout=100% nan=0% std=0.536 ev=0.49 kl=0.0001
+219912 s1 thr=0.020/0.96/1/0.00 probe=0% pos=2.0% relpos=0.0% all=0.0% mrel=0.047 mdist=0.034 mang=0.885 mdz=-0.023 succ=0% tout=100% nan=0% std=0.536 ev=0.51 kl=0.0002
+239904 s1 thr=0.020/0.96/1/0.00 probe=0% pos=2.0% relpos=0.0% all=0.0% mrel=0.046 mdist=0.034 mang=0.891 mdz=-0.023 succ=0% tout=100% nan=0% std=0.536 ev=0.50 kl=0.0001
+259896 s1 thr=0.020/0.96/1/0.00 probe=0% pos=2.0% relpos=0.0% all=0.0% mrel=0.046 mdist=0.034 mang=0.877 mdz=-0.024 succ=0% tout=100% nan=0% std=0.536 ev=0.46 kl=0.0006
+279888 s1 thr=0.020/0.96/1/0.00 probe=0% pos=2.0% relpos=0.0% all=0.0% mrel=0.047 mdist=0.034 mang=0.885 mdz=-0.024 succ=0% tout=100% nan=0% std=0.536 ev=0.51 kl=0.0005
+299880 s1 thr=0.020/0.96/1/0.00 probe=0% pos=1.9% relpos=0.0% all=0.0% mrel=0.047 mdist=0.034 mang=0.886 mdz=-0.023 succ=0% tout=100% nan=0% std=0.536 ev=0.50 kl=0.0007
+319872 s1 thr=0.020/0.96/1/0.00 probe=0% pos=1.9% relpos=0.0% all=0.0% mrel=0.047 mdist=0.034 mang=0.871 mdz=-0.023 succ=0% tout=100% nan=0% std=0.536 ev=0.46 kl=0.0012
+339864 s1 thr=0.020/0.96/1/0.00 probe=0% pos=2.0% relpos=0.0% all=0.0% mrel=0.047 mdist=0.034 mang=0.885 mdz=-0.024 succ=0% tout=100% nan=0% std=0.536 ev=0.54 kl=0.0001
+359856 s1 thr=0.020/0.96/1/0.00 probe=0% pos=2.0% relpos=0.0% all=0.0% mrel=0.047 mdist=0.034 mang=0.881 mdz=-0.023 succ=0% tout=100% nan=0% std=0.536 ev=0.50 kl=0.0002
+379848 s1 thr=0.020/0.96/1/0.00 probe=0% pos=1.9% relpos=0.0% all=0.0% mrel=0.046 mdist=0.034 mang=0.883 mdz=-0.024 succ=0% tout=100% nan=0% std=0.536 ev=0.58 kl=0.0011
+399840 s1 thr=0.020/0.96/1/0.00 probe=0% pos=2.0% relpos=0.0% all=0.0% mrel=0.046 mdist=0.034 mang=0.889 mdz=-0.024 succ=0% tout=100% nan=0% std=0.536 ev=0.56 kl=0.0006
+419832 s1 thr=0.020/0.96/1/0.00 probe=0% pos=1.4% relpos=0.0% all=0.0% mrel=0.040 mdist=0.034 mang=0.883 mdz=-0.024 succ=0% tout=100% nan=0% std=0.536 ev=0.52 kl=0.0024
+439824 s1 thr=0.020/0.96/1/0.00 probe=0% pos=1.6% relpos=0.0% all=0.0% mrel=0.041 mdist=0.034 mang=0.888 mdz=-0.024 succ=0% tout=100% nan=0% std=0.536 ev=0.60 kl=0.0001
