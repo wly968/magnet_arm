@@ -509,6 +509,9 @@ class ArmEnv(gym.Env):
         self.lost_x = 0.28                             # 超过此 x 才算滑出带（不要在任务中途丢目标）
         self.pool_spawn_x = (-1.18, -1.05)             # 池模式下新方块从 A 带最左端投放
         self.max_on_belt = 3                           # 带上最多同时几个，避免堆到手臂够不到
+        self.stopper = True                            # 挡料器：phase 0 时最前方块停在 arrive_x
+        self.min_gap = 0.09                            # 方块之间的最小间距（m）
+        self.min_phase0_steps = 25                     # 连续作业时 phase 0 至少停留几步（等手臂停稳）
         self.box_pos = np.zeros(3)
         self.attached = False       # phase2 后锁定到末端，phase5 后解锁
         self.carry_offset = 0.06
@@ -665,15 +668,27 @@ class ArmEnv(gym.Env):
                     self.data.mocap_quat[self.cube_ids[i]] = [1.0, 0.0, 0.0, 0.0]
                     break
 
-        # 运动
+        # 运动（带挡料器：最前方块在 phase 0 时停在 arrive_x，后面的按最小间距排队）
+        belt_idx = sorted([i for i, st in enumerate(self.cube_state) if st == "belt"],
+                          key=lambda k: -float(self.data.mocap_pos[self.cube_ids[k]][0]))
+        limit = None
+        for rank, i in enumerate(belt_idx):
+            mid = self.cube_ids[i]
+            mp = self.data.mocap_pos[mid]
+            nxt = float(mp[0]) + self.cube_speed * dt
+            if rank == 0 and self.stopper and self.phase not in (1, 2) and float(mp[0]) <= self.arrive_x:
+                nxt = min(nxt, self.arrive_x)          # 挡料位：等手臂开始接近
+            elif limit is not None:
+                nxt = min(nxt, limit - self.min_gap)   # 跟在前面那个后面排队
+            mp[0] = nxt
+            limit = float(mp[0])
+            if mp[0] > self.lost_x:
+                self._park_cube(i)
+
+        # 篮里滑行 / 被抓住跟随
         for i, st in enumerate(self.cube_state):
             mid = self.cube_ids[i]
-            if st == "belt":
-                mp = self.data.mocap_pos[mid]
-                mp[:] = mp + self.belt_dir * self.cube_speed * dt
-                if mp[0] > self.lost_x:
-                    self._park_cube(i)
-            elif st == "basket":
+            if st == "basket":
                 mp = self.data.mocap_pos[mid]
                 mp[:] = mp + self.beltB_dir * self.beltB_speed * dt
                 if mp[1] <= self.beltB_end_y:
@@ -860,7 +875,7 @@ class ArmEnv(gym.Env):
             # 等待阶段：与 phase 6 同款“回到初始姿态”奖励
             q_err = float(np.linalg.norm(self.data.qpos[self.arm_qpos_adr] - self.home_qpos))
             reward = -q_err * 2.0 - action_change * 0.3
-            if float(self.box_pos[0]) >= self.arrive_x:      # 方块到达原刷新点最左端
+            if float(self.box_pos[0]) >= self.arrive_x and self.wait_steps >= self.min_phase0_steps:
                 reward += 10.0
                 self.phase = 1
                 info["final_phase"] = 1
