@@ -2,13 +2,13 @@
 
 运行：
     cd scene_magnet
-    python demo.py                    # 打开窗口，连续演示
+    python demo.py                    # 打开窗口，连续抓取（默认 10 块轮转、1.5s 一块）
     python demo.py --headless 10      # 不开窗口，空跑 10 秒自检
-    python demo.py --interval 2.0     # 每个回合之间停顿 2 秒再掉下一个方块
+    python demo.py --interval 2.0     # 只有想要回合间停顿时才加这个参数
 
 流程：
     A 带最左端随机刷新方块 -> 手臂在 home 等它送到 -> 抓取 -> 搬运 -> 放料
-    -> 回原位（方块交给 B 带自己滑进篮子）-> 停顿 interval 秒 -> 下一个
+    -> 回原位（方块交给 B 带自己滑进篮子）-> 下一个方块已排队，直接开始
 """
 import argparse
 import os
@@ -137,8 +137,8 @@ def main():
                     help="回合之间的停顿秒数（0 = 不停，连续跑）")
     ap.add_argument("--episodes", type=int, default=0,
                     help="跑多少个回合后退出（0 = 一直跑）")
-    ap.add_argument("--cubes", type=int, default=1,
-                    help="方块池大小：1=单方块（稳）；>1=连续投放（实验性，偶尔漏一个）")
+    ap.add_argument("--cubes", type=int, default=10,
+                    help="方块池大小（默认 10 个轮流投放；设 1 则每轮重新投一个）")
     ap.add_argument("--spawn-period", type=float, default=1.5,
                     help="每隔多少秒投放一个新方块（1.5 以下可保证队列里总有货，手臂不用等）")
     ap.add_argument("--speed", type=float, default=2.0,
