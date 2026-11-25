@@ -32,7 +32,7 @@ python test.py --no-viewer --episodes 100   # 纯批量评测
 | `envs/phase34.py` | model2 训练封装：每回合先跑 model1 到 phase 3 |
 | `envs/phase6.py` | model3 训练封装：先跑 model1、model2 到 phase 6 |
 | `callbacks.py` | 全部回调：`CurriculumCallback`、`PhaseCurriculumCallback`、`PhaseTrackerCallback`、`DiagCallback`、`TrainLogCallback` |
-| `train_phase12.py` / `train_phase34.py` / `train_phase6.py` | 三个阶段各自的训练脚本 |
+| `train_phase1-2.py` / `train_phase3-5.py` / `train_phase6.py` | 三个阶段各自的训练脚本 |
 | `test.py` | 接力评测 + 可视化 |
 | `demo.py` | 连续抓取演示 |
 | `assets/models/train_scene.xml` | 训练场景（10 个方块槽位） |
@@ -45,8 +45,8 @@ python test.py --no-viewer --episodes 100   # 纯批量评测
 | `saves/phase3-5.zip` | phase 3-5 | dist 3.4 cm / angle 0.965 / 3 帧 |
 | `saves/phase6.zip` | phase 6 | 关节偏差 < 0.15 rad / 3 帧 |
 
-`train_phase12.py` 读 `saves/phase1-2.zip` 热启动、写 `ppo_arm_reach.zip`；
-`train_phase34.py` 读 `saves/phase1-2.zip`、写 `ppo_arm_reach.zip`；
+`train_phase1-2.py` 读 `saves/phase1-2.zip` 热启动、写 `ppo_arm_reach.zip`；
+`train_phase3-5.py` 读 `saves/phase1-2.zip`、写 `ppo_arm_reach.zip`；
 `train_phase6.py` 读 `saves/phase1-2.zip` + `saves/phase3-5.zip`、写 `ppo_arm_reach.zip`。
 **每个脚本训完要手动把 `ppo_arm_reach.zip` 改名成下一阶段要读的名字。**
 

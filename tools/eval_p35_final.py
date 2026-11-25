@@ -2,7 +2,7 @@
 os.environ["OMP_NUM_THREADS"]="1"; torch.set_num_threads(1)
 sys.path.insert(0,'scene_magnet')
 from stable_baselines3 import PPO
-import train_phase34 as T
+import train_phase3-5 as T
 m1=PPO.load("scene_magnet/saves/phase2.zip", device="cpu")
 m2=PPO.load("scene_magnet/saves/phase34_retract.zip", device="cpu")
 e=T.make_env(m1)(); cnt={}; info=[]

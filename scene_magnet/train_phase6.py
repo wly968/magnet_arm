@@ -68,7 +68,7 @@ if __name__ == "__main__":
     model1 = PPO.load(m1_path, device=device)
     print(f"model1: {os.path.basename(m1_path)} | obs {model1.observation_space.shape}")
     if not os.path.exists(m2_path):
-        raise SystemExit("缺少 saves/phase3-5.zip，请先跑 train_phase34.py")
+        raise SystemExit("缺少 saves/phase3-5.zip，请先跑 train_phase3-5.py")
     model2 = PPO.load(m2_path, device=device)
     print(f"model2: {os.path.basename(m2_path)} | obs {model2.observation_space.shape}")
 

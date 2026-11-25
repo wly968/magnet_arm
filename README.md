@@ -135,8 +135,8 @@ mujoco_xml/
 │   │   ├── phase6.zip            # model3（phase 6）
 │   │   ├── ckpt*/                # 每 50 万步检查点
 │   │   └── train_log.txt         # 单行文本训练日志
-│   ├── train_phase12.py          # 训 model1
-│   ├── train_phase34.py          # 训 model2
+│   ├── train_phase1-2.py          # 训 model1
+│   ├── train_phase3-5.py          # 训 model2
 │   ├── train_phase6.py           # 训 model3
 │   ├── test.py                   # 批量评测 + 可视化接力
 │   ├── demo.py                   # 连续抓取演示（无参数即可跑）
@@ -168,8 +168,8 @@ python test.py --no-viewer --episodes 100     # 纯批量评测
 ```bash
 cd scene_magnet
 
-python train_phase12.py     # model1：24 环境，默认 1M 步（按需改 TOTAL_STEPS）
-python train_phase34.py     # model2：16 环境，默认 2M 步（WARM_START 可热启动）
+python train_phase1-2.py     # model1：24 环境，默认 1M 步（按需改 TOTAL_STEPS）
+python train_phase3-5.py     # model2：16 环境，默认 2M 步（WARM_START 可热启动）
 python train_phase6.py      # model3：16 环境，默认 1M 步
 ```
 

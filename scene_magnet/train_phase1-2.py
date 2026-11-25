@@ -25,7 +25,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 
-from envs.arm_env import ArmEnv
+from envs.arm_env import ArmEnv,WaitAwareMonitor
 from callbacks import (CurriculumCallback, PhaseTrackerCallback,
                        DiagCallback, TrainLogCallback)
 

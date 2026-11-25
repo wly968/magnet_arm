@@ -2,7 +2,7 @@
 os.environ["OMP_NUM_THREADS"]="1"; torch.set_num_threads(1)
 sys.path.insert(0,'scene_magnet')
 from stable_baselines3 import PPO
-import train_phase34 as T
+import train_phase3-5 as T
 m1=PPO.load("scene_magnet/saves/phase2.zip", device="cpu")
 import glob
 files=sorted(glob.glob("scene_magnet/saves/ckpt_p35/*.zip"), key=os.path.getmtime)[-2:]
