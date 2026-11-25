@@ -727,6 +727,10 @@ class ArmEnv(gym.Env):
         self.prev_cmd = np.zeros(4)
         self.prev_action = np.zeros(4)
         self.prev_action2 = np.zeros(4)
+        # 只把手臂复位到 home（方块池保持流动），保证每轮从干净状态开始
+        self.data.qpos[self.arm_qpos_adr] = self.home_qpos
+        self.data.qvel[self.arm_dof_adr] = 0.0
+        mujoco.mj_forward(self.model, self.data)
 
     def reset(self, seed=None, option=None):
         super().reset(seed=seed)
@@ -875,7 +879,12 @@ class ArmEnv(gym.Env):
             # 等待阶段：与 phase 6 同款“回到初始姿态”奖励
             q_err = float(np.linalg.norm(self.data.qpos[self.arm_qpos_adr] - self.home_qpos))
             reward = -q_err * 2.0 - action_change * 0.3
-            if float(self.box_pos[0]) >= self.arrive_x and self.wait_steps >= self.min_phase0_steps:
+            # 连续作业：除了"方块到位"，还要求"手臂已停稳在 home"才放行
+            q_err0 = float(np.linalg.norm(self.data.qpos[self.arm_qpos_adr] - self.home_qpos))
+            qvel0 = float(np.abs(self.data.qvel[self.arm_dof_adr]).max())
+            arm_ready = (self.n_cubes == 1) or (q_err0 < 0.16 and qvel0 < 0.30)
+            if (float(self.box_pos[0]) >= self.arrive_x and self.wait_steps >= self.min_phase0_steps
+                    and arm_ready):
                 reward += 10.0
                 self.phase = 1
                 info["final_phase"] = 1
