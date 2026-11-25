@@ -1,4 +1,0 @@
-# step stage thr(dist/angle/still/rel) probe pos relpos all mrel mdist mang mdz succ tout nan std ev kl
-8000 s1 thr=0.050/0.94/0/0.20 probe=nan% pos=82.9% relpos=0.2% all=0.2% mrel=1.424 mdist=0.037 mang=0.979 mdz=-0.008 succ=24% tout=76% nan=0% std=0.114 ev=-0.87 kl=0.0128
-16000 s1 thr=0.050/0.94/0/0.20 probe=nan% pos=85.8% relpos=0.2% all=0.2% mrel=1.426 mdist=0.037 mang=0.982 mdz=-0.007 succ=23% tout=77% nan=0% std=0.114 ev=-0.01 kl=0.0022
-24000 s1 thr=0.050/0.94/0/0.20 probe=nan% pos=82.0% relpos=0.3% all=0.2% mrel=1.419 mdist=0.038 mang=0.983 mdz=-0.007 succ=25% tout=75% nan=0% std=0.114 ev=0.43 kl=0.0011
