@@ -119,6 +119,8 @@ class ArmEnv(gym.Env):
         self.ik_phases = (1, 2)
         self.ik_scale = 0.02         # 残差尺度 rad/单位动作（末端约 5 mm/步）
         self.ik_iters = 5
+        self.use_rel_criterion = True   # phase 2 是否把相对速度作为成功判据
+        self.still_decay = 999          # dwell 失败时 still_count 的衰减量（999=直接清零）
         self.band_tol = 0.03        # phase 2 高度带：box+band_tol < ee_z < target+band_tol
         # 重力/科氏前馈：position 伺服有 3~4 cm 的静差，前馈后静态精度可达 0.1 mm
         self.use_gravity_ff = False
@@ -524,7 +526,7 @@ class ArmEnv(gym.Env):
             # ---- 诊断统计：分别记录各子条件的满足情况 ----
             _d_ok = dist < self.dist_threshold
             _a_ok = angle1 > self.angle1_threshold
-            _r_ok = float(rel) < self.rel_threshold
+            _r_ok = (float(rel) < self.rel_threshold) if self.use_rel_criterion else True
             _b_ok = (ee_pos[2] < target_pos[2] + self.band_tol) and (ee_pos[2] > float(self.box_pos[2]) + self.band_tol)
             _g = self.diag
             _g["n"] += 1
@@ -543,10 +545,15 @@ class ArmEnv(gym.Env):
             if _pos:
                 _g["sum_rel_pos"] += float(rel)
             # 允许略压过目标平面，但末端不得低于方块顶面 5cm（避免圆盘嵌进方块）
-            if dist < self.dist_threshold and angle1 > self.angle1_threshold and np.linalg.norm(self.ee_val-self.box_vel)<self.rel_threshold and ee_pos[2] < target_pos[2] + self.band_tol and ee_pos[2] > self.box_pos[2] + self.band_tol:
+            _rel_ok_s = (np.linalg.norm(self.ee_val - self.box_vel) < self.rel_threshold
+                         or not self.use_rel_criterion)
+            _all_ok = (dist < self.dist_threshold and angle1 > self.angle1_threshold and _rel_ok_s
+                       and ee_pos[2] < target_pos[2] + self.band_tol
+                       and ee_pos[2] > self.box_pos[2] + self.band_tol)
+            if _all_ok:
                 self.still_count += 1
-            if not (dist < self.dist_threshold and angle1 > self.angle1_threshold and np.linalg.norm(self.ee_val-self.box_vel)<self.rel_threshold and ee_pos[2] < target_pos[2] + self.band_tol and ee_pos[2] > self.box_pos[2] + self.band_tol):
-                self.still_count = 0
+            else:
+                self.still_count = max(0, self.still_count - self.still_decay)
             if dist < self.dist_threshold and angle1 > self.angle1_threshold and ee_pos[2] < target_pos[2] + self.band_tol and ee_pos[2] > self.box_pos[2] + self.band_tol and self.still_count > self.still_count_threshold :
                 reward += 30.0
                 self.phase = 3
