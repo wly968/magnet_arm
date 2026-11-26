@@ -7,8 +7,41 @@ import argparse
 import os
 
 
+class _SerialPool:
+    """替代 ultralytics 的 ThreadPool：沙箱禁止命名管道时，退化为串行。"""
+
+    def __init__(self, *a, **k):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def imap(self, func=None, iterable=(), **kw):
+        return map(func, iterable)
+
+
+def _patch_pool():
+    """两个本机兼容补丁：
+
+    1. ultralytics 用 ThreadPool 扫标签，沙箱禁止命名管道（WinError 5）→ 改串行；
+    2. 几何增强 RandomPerspective 里有矩阵乘法，本机 BLAS 会硬崩（0xc06d007f）
+       → 关掉它（合成数据集本身已有足够变化）。
+    """
+    try:
+        import ultralytics.data.dataset as _ds
+        _ds.ThreadPool = _SerialPool
+    except Exception:
+        pass
+    # 注意：ultralytics 的几何增强里还有多段矩阵乘（apply_bboxes/apply_segments），
+    # 本机 numpy 的 BLAS 会硬崩（0xc06d007f），无法逐一打补丁 —— 训练前必须先修好 numpy。
+
+
 def train(data, model="yolov8n-seg.pt", epochs=60, imgsz=640, batch=8,
           device="cpu", project="runs", name="segment"):
+    _patch_pool()
     from ultralytics import YOLO
     try:
         net = YOLO(model)                 # 预训练权重（需要联网下载一次）
@@ -18,7 +51,7 @@ def train(data, model="yolov8n-seg.pt", epochs=60, imgsz=640, batch=8,
     # workers=0：本机沙箱禁止子进程管道（WinError 5），数据加载必须留在主进程
     res = net.train(data=data, epochs=epochs, imgsz=imgsz, batch=batch,
                     device=device, workers=0, project=project, name=name,
-                    exist_ok=True, plots=False)
+                    exist_ok=True, plots=False, mosaic=0.0)
     best = os.path.join(project, name, "weights", "best.pt")
     print("[train_yolo] 完成，权重：", best)
     return res, best
