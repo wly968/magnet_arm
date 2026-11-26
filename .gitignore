@@ -40,3 +40,10 @@ tools/*.png
 scene_magnet/saves/ckpt*/
 scene_magnet/saves/best_*/
 scene_magnet/saves/eval_logs*/
+
+# 视觉模块产物（数据集/标定/训练输出，可再生成）
+scene_magnet/vision/dataset/
+scene_magnet/vision/calib.npz
+scene_magnet/runs/
+scene_magnet/vision/raw/
+

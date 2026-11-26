@@ -1,43 +1,29 @@
 """标定：像素 ↔ 带面坐标。
 
-先用 MuJoCo 相机参数做解析投影（精确），再用渲染出来的红色方块质心做**交叉验证**，
-两者一致才说明相机模型/图像方向没问题。标定结果存到 `vision/calib.npz`。
+做法
+----
+1. 用相机参数做解析投影（作为诊断量），真正用于拟合的是**检测到的质心**；
+   这是经验标定：把"轮廓质心"相对"方块中心"的透视偏移一起吸收进单应矩阵
+2. 把这些点放成红色方块渲染，检测红色质心，与解析投影对比（验证相机模型/图像方向）；
+3. 用解析投影点拟合单应矩阵（解析点无检测噪声），保存 `calib.npz`；
+4. 用"世界→像素→世界"往返误差检查系统偏差。
 
-    python -m vision.calibrate          # 在 scene_magnet 目录下
+    cd scene_magnet
+    python -m vision.calibrate
 """
 import os
 
 import mujoco
 import numpy as np
 
-from .camera import Camera, PLANE_Z
+from .camera import Camera, PLANE_Z, TOP_Z
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CALIB_PATH = os.path.join(HERE, "calib.npz")
 
 
-def project_point(cam, world_xyz):
-    """把世界点投影到像素坐标（不依赖检测，直接由相机参数算）。"""
-    m = cam.model
-    cid = cam.cam_id
-    pos = np.array(m.cam_pos[cid], dtype=np.float64)
-    # cam_mat 是 3x3，把相机局部坐标映射到世界坐标；它的转置就是 world->camera
-    R = np.array(m.cam_mat0[cid], dtype=np.float64).reshape(3, 3)
-    p_cam = R.T @ (np.asarray(world_xyz, dtype=np.float64) - pos)
-    fovy = float(m.cam_fovy[cid])
-    f = 1.0 / np.tan(np.radians(fovy) * 0.5)
-    z = -p_cam[2]                      # MuJoCo 相机沿局部 -z 看
-    if z <= 1e-6:
-        return None
-    x_ndc = f * p_cam[0] / z / (cam.width / cam.height)
-    y_ndc = f * p_cam[1] / z
-    u = (x_ndc + 1.0) * 0.5 * cam.width
-    v = (1.0 - y_ndc) * 0.5 * cam.height
-    return np.array([u, v])
-
-
 def detect_red_centroid(img):
-    """在渲染图里找红色块质心（仅用于标定交叉验证）。"""
+    """红色掩码质心（仅用于标定交叉验证）。返回 (uv, area)。"""
     rgb = img.astype(np.float64)
     r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
     mask = (r > 90) & (r > 1.6 * g) & (r > 1.6 * b)
@@ -47,71 +33,70 @@ def detect_red_centroid(img):
     return np.array([xs.mean(), ys.mean()]), int(mask.sum())
 
 
-def calibrate(width=640, height=480, verbose=True):
+def calibrate(width=640, height=480, verbose=True, save=True):
     cam = Camera(width=width, height=height)
     m, d = cam.model, cam.data
 
-    # 1) 把一个方块放到网格点上，渲染 -> 检测质心 -> 与解析投影对比
-    root = m.body("cube_0").rootid
+    # 只留 cube_0 用于标定，其余藏起来
     mid = int(m.body_mocapid[m.body("cube_0").id])
-    for i in range(1, 10):
+    for i in range(1, 64):
         try:
             j = int(m.body_mocapid[m.body(f"cube_{i}").id])
         except Exception:
-            continue
-        d.mocap_pos[j] = [0, 0, -5]
+            break
+        d.mocap_pos[j] = [0.0, 0.0, -5.0]
     mujoco.mj_forward(m, d)
 
     xs = [-1.05, -0.75, -0.45, -0.15]
     ys = [0.50, 0.65, 0.80]
-    pairs, residual = [], []
+    pixels, worlds, residual = [], [], []
     for x in xs:
         for y in ys:
             d.mocap_pos[mid] = [x, y, PLANE_Z]
             mujoco.mj_forward(m, d)
-            img = cam.render()
-            uv_det, area = detect_red_centroid(img)
-            uv_proj = project_point(cam, [x, y, PLANE_Z])
-            if uv_det is None or uv_proj is None or area < 20:
+            uv_proj = cam.project_point([x, y, TOP_Z])   # 顶面
+            uv_det, area = detect_red_centroid(cam.render())
+            if uv_proj is None or uv_det is None or area < 20:
                 continue
-            pairs.append((uv_proj, (x, y)))
-            residual.append(np.linalg.norm(uv_det - uv_proj))
-    d.mocap_pos[mid] = [0, 0, -5]
-    mujoco.mj_forward(m, d)
+            pixels.append(uv_det)   # 用检测质心拟合，吸收轮廓偏移
+            worlds.append((x, y))
+            residual.append(float(np.linalg.norm(uv_det - uv_proj)))
 
-    if len(pairs) < 4:
+    d.mocap_pos[mid] = [0.0, 0.0, -5.0]
+    mujoco.mj_forward(m, d)
+    if len(pixels) < 4:
         raise RuntimeError("标定失败：有效点不足 4 个")
 
-    # 2) 用解析投影点拟合单应矩阵（精确、无检测噪声）
-    pixels = np.array([p for p, _ in pairs])
-    worlds = np.array([w for _, w in pairs])
     cam.fit_homography(pixels, worlds)
 
-    # 3) 残差检查：世界坐标回投误差
     errs = []
     for (u, v), (x, y) in zip(pixels, worlds):
         xy = cam.pixel_to_world([u, v])
-        errs.append(np.linalg.norm(xy - [x, y]))
+        errs.append(float(np.linalg.norm(xy - [x, y])))
 
-    np.savez(CALIB_PATH, H=cam.H, H_inv=cam.H_inv,
-             width=width, height=height, plane_z=PLANE_Z)
+    if save:
+        np.savez(CALIB_PATH, H=cam.H, H_inv=cam.H_inv,
+                 width=width, height=height, plane_z=PLANE_Z)
     if verbose:
-        print(f"[calibrate] 采样点 {len(pairs)} 个")
-        print(f"[calibrate] 解析投影 vs 检测质心偏差：中位 {np.median(residual):.2f} px, "
+        print(f"[calibrate] 有效采样点 {len(pixels)} 个")
+        print(f"[calibrate] 诊断：解析投影 vs 红色质心 中位 {np.median(residual):.2f} px，"
               f"最大 {np.max(residual):.2f} px")
-        print(f"[calibrate] 单应矩阵往返误差：中位 {1000*np.median(errs):.2f} mm, "
-              f"最大 {1000*np.max(errs):.2f} mm")
-        print(f"[calibrate] 已保存 {CALIB_PATH}")
-    return cam
+        print(f"[calibrate] 单应往返误差：中位 {1000*np.median(errs):.3f} mm，"
+              f"最大 {1000*np.max(errs):.3f} mm")
+        if save:
+            print(f"[calibrate] 已保存 {CALIB_PATH}")
+    return cam, {"pixel_residual": residual, "world_error_mm": np.array(errs) * 1000.0}
 
 
 def load_calibration():
-    """读回标定结果，返回 (H, H_inv, meta)。"""
+    """读回标定：返回 (H, H_inv, meta)。"""
     if not os.path.exists(CALIB_PATH):
         raise FileNotFoundError(f"没有标定文件：{CALIB_PATH}，先跑 python -m vision.calibrate")
     z = np.load(CALIB_PATH)
-    return z["H"], z["H_inv"], {"width": int(z["width"]), "height": int(z["height"]),
-                                "plane_z": float(z["plane_z"])}
+    return z["H"], z["H_inv"], {
+        "width": int(z["width"]), "height": int(z["height"]),
+        "plane_z": float(z["plane_z"]),
+    }
 
 
 if __name__ == "__main__":
