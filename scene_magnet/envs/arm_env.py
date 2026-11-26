@@ -518,8 +518,15 @@ class ArmEnv(gym.Env):
                 return self._get_obs(), reward, False, False, info
 
         elif self.phase == 2:
+            # 先算一次"四条件是否同时满足"，供奖励函数使用（后面还会复用它）
+            _rel_ok_pre = (np.linalg.norm(self.ee_val - self.box_vel) < self.rel_threshold
+                           or not self.use_rel_criterion)
+            _all_ok = (dist < self.dist_threshold and angle1 > self.angle1_threshold
+                       and _rel_ok_pre
+                       and ee_pos[2] < target_pos[2] + self.band_tol
+                       and ee_pos[2] > float(self.box_pos[2]) + self.band_tol)
             if self.phase2_reward_fn is not None:
-                reward = self.phase2_reward_fn(dist, angle1, action_change, self.still_count)
+                reward = self.phase2_reward_fn(dist, angle1, action_change, self.still_count, _all_ok)
             else:
                 reward = (-dist * 4.0 - 5.0 * (1.0 - angle1) - action_change * 0.3 - 0.2
                           + 0.3 * min(self.still_count, 5))
@@ -549,7 +556,7 @@ class ArmEnv(gym.Env):
                          or not self.use_rel_criterion)
             _all_ok = (dist < self.dist_threshold and angle1 > self.angle1_threshold and _rel_ok_s
                        and ee_pos[2] < target_pos[2] + self.band_tol
-                       and ee_pos[2] > self.box_pos[2] + self.band_tol)
+                       and ee_pos[2] > self.box_pos[2] + self.band_tol)  # 与上面一致
             if _all_ok:
                 self.still_count += 1
             else:

@@ -16,66 +16,72 @@ from .arm_env import ArmEnv
 # 规则：从原课程第 5 档出发，之后**每一档只收紧 dist / angle / still 中的一项**，
 # 三项轮流推进，避免"三个条件同时变严"导致成功率断崖。
 FINE_SCHEDULE = [
-    # ---- 阶段 A：只收 dist（still 固定 2 帧）----
+    # ---- A 段：只收 dist（3.4 cm -> 1.2 cm），still 固定 2 帧 ----
     (0.034, 0.965, 2, 0.05),
     (0.030, 0.965, 2, 0.05),
     (0.026, 0.965, 2, 0.05),
     (0.022, 0.965, 2, 0.05),
-    (0.018, 0.965, 2, 0.05),
-    (0.015, 0.965, 2, 0.05),
+    (0.019, 0.965, 2, 0.05),
+    (0.016, 0.965, 2, 0.05),
+    (0.014, 0.965, 2, 0.05),
     (0.012, 0.965, 2, 0.05),
-    (0.010, 0.965, 2, 0.05),
-    # ---- 阶段 B：只收 angle ----
-    (0.010, 0.972, 2, 0.05),
-    (0.010, 0.978, 2, 0.05),
-    (0.010, 0.983, 2, 0.05),
-    (0.010, 0.987, 2, 0.05),
-    (0.010, 0.990, 2, 0.05),
-    (0.010, 0.9925, 2, 0.05),
-    (0.010, 0.994, 2, 0.05),
-    # ---- 阶段 C：最后拉 dwell（dist/angle 已固定）----
-    (0.010, 0.994, 4, 0.05),
-    (0.010, 0.994, 7, 0.05),
-    (0.010, 0.994, 10, 0.05),
-    (0.010, 0.994, 13, 0.05),
-    (0.010, 0.994, 16, 0.05),
-    (0.010, 0.994, 19, 0.05),
-    (0.010, 0.994, 21, 0.05),
+    # ---- B 段：只收 angle（0.965 -> 0.992）----
+    (0.012, 0.970, 2, 0.05),
+    (0.012, 0.975, 2, 0.05),
+    (0.012, 0.980, 2, 0.05),
+    (0.012, 0.984, 2, 0.05),
+    (0.012, 0.987, 2, 0.05),
+    (0.012, 0.990, 2, 0.05),
+    (0.012, 0.992, 2, 0.05),
+    # ---- C 段：最后拉 dwell（2 -> 15 帧）----
+    (0.012, 0.992, 4, 0.05),
+    (0.012, 0.992, 6, 0.05),
+    (0.012, 0.992, 8, 0.05),
+    (0.012, 0.992, 10, 0.05),
+    (0.012, 0.992, 12, 0.05),
+    (0.012, 0.992, 14, 0.05),
+    (0.012, 0.992, 15, 0.05),
 ]
 
 
 class ArmFineEnv(ArmEnv):
     """精度微调版：IK 更准、残差更细、高度带更窄、奖励带指数精度漏斗。"""
 
-    def __init__(self, **kwargs):
+    # 两套奖励：v1 用于本轮（温和），v2 用于下一轮（陡峭，进一步收敛）
+    PROFILES = {
+        "v1": dict(w_dist=8.0, w_ang=12.0, eps_d=0.010, w_ed=2.0,
+                   eps_a=0.010, w_ea=2.0, hold=0.3, hold_cap=5),
+        "v2": dict(w_dist=20.0, w_ang=30.0, eps_d=0.004, w_ed=4.0,
+                   eps_a=0.004, w_ea=4.0, hold=0.5, hold_cap=8),
+    }
+
+    def __init__(self, reward_profile="v1", **kwargs):
         super().__init__(**kwargs)
         self.use_gravity_ff = True  # 关键：抵消 3~4 cm 的伺服静差，静态精度 41 mm -> 0.06 mm
         self.ik_iters = 15          # IK 残差：5 次 4.5 mm -> 15 次约 0.1 mm
         self.ik_scale = 0.008       # 残差 0.008 rad ≈ 4 mm/单位动作（原 0.02）
-        self.band_tol = 0.020       # 高度带 ±2 cm（原来 ±3 cm；再窄会和 dist 判据互相卡死）
+        self.band_tol = 0.020       # 高度带 ±2 cm
         self.use_rel_criterion = False  # 磁吸是运动学吸附，不需要"零相对速度"
-        self.still_decay = 1        # dwell 失败只衰减 1，不清零（否则 11 帧连续几乎不可能）
-        self.phase2_reward_fn = self._fine_reward
+        self.still_decay = 1        # dwell 失败只衰减 1，不清零
+        self.reward_profile = reward_profile
+        self.phase2_reward_fn = self._reward
 
-    @staticmethod
-    def _fine_reward(dist, angle1, action_change, still_count):
-        """线性项管远处、指数项管最后几毫米（精度漏斗）。
+    def _reward(self, dist, angle1, action_change, still_count, all_ok):
+        """线性项管远处、指数项管最后几毫米；保持奖励只在**真正满足判据**时发放。
 
-        指数项：sigma_d = 1 cm，sigma_a = 1-0.98 → 角度误差 2% 尺度。
-        两项在零点附近给出很陡的梯度，把一个"大约到位"的策略压到毫米级。
+        注意：保持奖励必须挂在 all_ok 上。之前挂在 still_count 上，
+        漏积分器会把 still_count 抬高，策略悬在判据外也能拿钱 -> 奖励≈0 的局部最优。
         """
-        d_exp = 1.0 - np.exp(-dist / 0.010)
+        p = self.PROFILES[self.reward_profile]
         a = max(0.0, 1.0 - angle1)
-        a_exp = 1.0 - np.exp(-a / 0.010)
-        reward = (
-            -4.0 * dist                     # 距离：线性
-            - 12.0 * a                      # 角度：线性（1° ≈ 0.017）
-            - 2.0 * d_exp                   # 距离：指数漏斗（1 cm 尺度）
-            - 2.0 * a_exp                   # 角度：指数漏斗
-            - 0.3 * action_change
-            + 0.4 * min(still_count, 8)     # 保持奖励：鼓励"贴住不动"
-        )
-        return float(reward)
+        r = (-p["w_dist"] * dist
+             - p["w_ang"] * a
+             - p["w_ed"] * (1.0 - np.exp(-dist / p["eps_d"]))
+             - p["w_ea"] * (1.0 - np.exp(-a / p["eps_a"]))
+             - 0.3 * action_change)
+        if all_ok:
+            r += p["hold"] * min(still_count, p["hold_cap"])
+        return float(r)
 
     def step(self, action):
         """微调只训 phase 1/2：抓到即终止，不进入 model1 没学过的 phase 3-6。"""

@@ -32,8 +32,8 @@ SAVES = os.path.join(HERE, "saves")
 N_ENVS = 24
 
 
-def make_env():
-    return WaitAwareMonitor(ArmFineEnv())
+def make_env(profile="v1"):
+    return WaitAwareMonitor(ArmFineEnv(reward_profile=profile))
 
 
 def main():
@@ -41,11 +41,13 @@ def main():
     ap.add_argument("--steps", type=int, default=3_000_000)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--start-stage", type=int, default=0, help="从课程第几档开始（0 起）")
+    ap.add_argument("--reward", choices=["v1", "v2"], default="v1",
+                    help="奖励档位：v1 温和（本轮用），v2 陡峭（进一步收敛用）")
     args = ap.parse_args()
 
     device = "cpu"
-    env = DummyVecEnv([make_env for _ in range(N_ENVS)])
-    eval_env = DummyVecEnv([make_env])
+    env = DummyVecEnv([lambda: make_env(args.reward) for _ in range(N_ENVS)])
+    eval_env = DummyVecEnv([lambda: make_env(args.reward)])
 
     # 微调课程：沿用同一套性能门控（确定性探测 30 局 + 连续 2 次达标）
     curriculum = CurriculumCallback(
@@ -80,7 +82,7 @@ def main():
                     target_kl=0.02, seed=0)
         print("⚠️ 没有找到 phase1-2.zip，从零开始训练")
 
-    print(f"开始微调：{N_ENVS} 环境，{args.steps} 步 | 课程档位 {len(FINE_SCHEDULE)} 档")
+    print(f"开始微调：{N_ENVS} 环境，{args.steps} 步 | 课程 {len(FINE_SCHEDULE)} 档 | 奖励 {args.reward}")
     model.learn(total_timesteps=args.steps,
                 callback=[curriculum, PhaseTrackerCallback(), train_log, ckpt, eval_cb])
     out = os.path.join(HERE, "ppo_arm_reach.zip")
