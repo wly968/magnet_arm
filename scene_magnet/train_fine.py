@@ -54,6 +54,7 @@ def main():
         min_steps=100_000, success_threshold=0.6,
         probe_episodes=30, probe_every=100_000, confirm_passes=2,
         start_idx=args.start_stage,
+        probe_env_fn=lambda: ArmFineEnv(reward_profile=args.reward),
     )
     curriculum.SCHEDULE = FINE_SCHEDULE          # 覆盖成精度档位
     train_log = TrainLogCallback(os.path.join(SAVES, "train_log_fine.txt"),

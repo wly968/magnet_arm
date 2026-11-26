@@ -35,7 +35,7 @@ class CurriculumCallback(BaseCallback):
 
     def __init__(self, min_steps=300_000, success_threshold=0.6,
                  target_phase=3, probe_episodes=30, probe_every=100_000,
-                 confirm_passes=2, start_idx=0, verbose=1):
+                 confirm_passes=2, start_idx=0, probe_env_fn=None, verbose=1):
         super().__init__(verbose=verbose)
         self.min_steps = int(min_steps)
         self.success_threshold = float(success_threshold)
@@ -54,6 +54,7 @@ class CurriculumCallback(BaseCallback):
         self._last_probe = -10**18
         self._pass_streak = 0
         self.still_target = "still"   # "still"=phase 2/5 的 still；"home_still"=phase 6 的 dwell
+        self.probe_env_fn = probe_env_fn   # 探测环境构造函数（必须和训练同一种 env）
 
     def _stages(self):
         out = []
@@ -81,8 +82,11 @@ class CurriculumCallback(BaseCallback):
 
     def _probe(self, stage):
         if self._probe_env is None:
-            from envs.arm_env import ArmEnv      # 惰性导入，避免循环依赖
-            self._probe_env = ArmEnv()
+            if self.probe_env_fn is not None:
+                self._probe_env = self.probe_env_fn()
+            else:
+                from envs.arm_env import ArmEnv  # 惰性导入，避免循环依赖
+                self._probe_env = ArmEnv()
         e = self._probe_env
         dist, angle, still, rel = stage
         e._set_dist(dist)
