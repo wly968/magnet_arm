@@ -41,7 +41,7 @@ python test.py --no-viewer --episodes 100   # 纯批量评测
 
 | 文件 | 负责 | 判定 |
 |---|---|---|
-| `saves/phase1-2.zip` | phase 0-2 | dist 3.2 cm / angle 0.96 / 2 帧 |
+| `saves/phase1-2.zip` | phase 0-2 | 精调：dist 1.4 cm / angle 0.992 / 15 帧（100%） |
 | `saves/phase3-5.zip` | phase 3-5 | dist 3.4 cm / angle 0.965 / 3 帧 |
 | `saves/phase6.zip` | phase 6 | 关节偏差 < 0.15 rad / 3 帧 |
 

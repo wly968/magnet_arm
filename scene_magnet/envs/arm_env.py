@@ -118,12 +118,12 @@ class ArmEnv(gym.Env):
         # IK 基准 + RL 残差（phase 1/2）
         self.ik_phases = (1, 2)
         self.ik_scale = 0.02         # 残差尺度 rad/单位动作（末端约 5 mm/步）
-        self.ik_iters = 5
-        self.use_rel_criterion = True   # phase 2 是否把相对速度作为成功判据
+        self.ik_iters = 15
+        self.use_rel_criterion = False  # 磁吸用运动学吸附，不把相对速度当判据
         self.still_decay = 999          # dwell 失败时 still_count 的衰减量（999=直接清零）
-        self.band_tol = 0.03        # phase 2 高度带：box+band_tol < ee_z < target+band_tol
+        self.band_tol = 0.020       # phase 2 高度带：box+band_tol < ee_z < target+band_tol
         # 重力/科氏前馈：position 伺服有 3~4 cm 的静差，前馈后静态精度可达 0.1 mm
-        self.use_gravity_ff = False
+        self.use_gravity_ff = True
         self.actuator_kp = self.model.actuator_gainprm[: self.model.nu, 0].copy()
         self.phase2_reward_fn = None  # 微调环境可替换 phase 2 的奖励函数
         self.ik_lr = 1.0
