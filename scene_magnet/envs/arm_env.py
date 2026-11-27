@@ -130,6 +130,12 @@ class ArmEnv(gym.Env):
         self.ik_damping = 1e-3
         # 视觉不确定性占位（接入视觉前恒为 0）：σx, σy, σvx, σvy
         self.pos_std = np.zeros(4, dtype=np.float64)
+        # ---- 视觉估计（use_vision=True 时替代真值进入观测与 IK 目标）----
+        self.vision = None                 # VisionBridge，set_vision() 注入
+        self.use_vision = False
+        self.vision_pos = np.zeros(3)      # 估计位置
+        self.vision_vel = np.zeros(3)      # 估计速度
+        self.last_vision_t = 0.0
 
         # 传送带运动 + phase 0 等待
         self.cube_speed = 0.12                          # 带 A 输送速度 (m/s)：0.2 时右半段追不上，0.12 全带可抓
@@ -204,6 +210,30 @@ class ArmEnv(gym.Env):
         mujoco.mj_forward(self.model, self.data)
         return q
 
+    def _tgt_vel(self):
+        return self.vision_vel if self.use_vision else self.box_vel
+
+    def set_vision(self, bridge, enable=True):
+        """接入视觉：bridge 需提供 query(t) -> {xy, vel, sigma_mm} 或 None。"""
+        self.vision = bridge
+        self.use_vision = bool(enable)
+
+    def _update_vision(self, dt):
+        """每步刷新视觉估计；没检测到就按速度外推并放大 σ。
+
+        注意：时间戳一律用仿真时间 data.time。仿真可能比实时快很多，
+        若用 time.time() 会和视觉线程的采样时刻对不上（曾导致退回 phase 4）。
+        """
+        q = self.vision.query(float(self.data.time))
+        if q is not None:
+            self.vision_pos = np.array([q["xy"][0], q["xy"][1], float(self.box_pos[2])])
+            self.vision_vel = np.array([q["vel"][0], q["vel"][1], 0.0])
+            sigma = float(q["sigma_mm"]) / 1000.0
+            self.pos_std[:] = [sigma, sigma, 0.02, 0.0]
+        else:
+            self.vision_pos[:2] += self.vision_vel[:2] * dt
+            self.pos_std[:2] = np.minimum(self.pos_std[:2] * 1.2 + 0.0005, 0.05)
+
     def _gravity_ff(self, q_ref):
         """把目标构型下的重力/科氏力矩换算成位置伺服的指令偏置：ctrl = q_ref + tau/kp。"""
         q_save = self.data.qpos[self.arm_qpos_adr].copy()
@@ -222,15 +252,19 @@ class ArmEnv(gym.Env):
         a[1] += -2.5 * err
         return np.clip(a, -1.0, 1.0)
 
+    def _tgt_pos(self):
+        """控制/观测用的方块位置：视觉开启时用估计值，否则用真值。"""
+        return self.vision_pos if self.use_vision else self.box_pos
+
     def _target(self):
         if self.phase == 0:            # 等待：保持在初始位
             return self.home_ee
         if self.phase == 1:            # 取料点（悬停）
-            return self.box_pos + self.pick_offset
+            return self._tgt_pos() + self.pick_offset
         if self.phase == 2:            # 下抓
-            return self.box_pos + self.grasp_offset
+            return self._tgt_pos() + self.grasp_offset
         if self.phase == 3:            # 抓后竖直抬起，回到悬停高度
-            return self.box_pos + self.pick_offset
+            return self._tgt_pos() + self.pick_offset
         if self.phase == 4:            # 中间转移姿态
             return self.transfer_pose
         if self.phase == 5:            # 放料
@@ -364,6 +398,9 @@ class ArmEnv(gym.Env):
             spawn_x = float(self.np_random.uniform(*self.spawn_x_range))
         spawn_y = float(self.spawn_y) if self.spawn_mode == "fixed" else float(self.np_random.uniform(*self.spawn_y_range))
         self.box_pos = np.array([spawn_x, spawn_y, 0.375])
+        self.vision_pos = self.box_pos.copy()
+        self.vision_vel = np.zeros(3)
+        self.pos_std[:] = 0.0
         self.attached = False
         self.released = False
         self.collected = False
@@ -466,6 +503,8 @@ class ArmEnv(gym.Env):
             self.box_pos = self.data.mocap_pos[self.mocap_id].copy()
         dt_step = self.model.opt.timestep * 5
         self.box_vel = (self.box_pos - prev_box) / max(dt_step, 1e-9)
+        if self.vision is not None:
+            self._update_vision(dt_step)
         ee_pos = self.data.site_xpos[self.ee_id].copy()
         mujoco.mj_objectVelocity(self.model,self.data,mujoco.mjtObj.mjOBJ_SITE,self.ee_id,self.ee_val1,0)
         self.ee_val = self.ee_val1[3:]
@@ -564,6 +603,8 @@ class ArmEnv(gym.Env):
             if dist < self.dist_threshold and angle1 > self.angle1_threshold and ee_pos[2] < target_pos[2] + self.band_tol and ee_pos[2] > self.box_pos[2] + self.band_tol and self.still_count > self.still_count_threshold :
                 reward += 30.0
                 self.phase = 3
+                if self.vision is not None and hasattr(self.vision, "mark_carried"):
+                    self.vision.mark_carried(self.box_pos)   # 抓走了，别再当目标是它
                 self.still_count = 0
                 self.attached = True              # 抓住：方块跟随末端
                 info["final_phase"] = 3
@@ -644,7 +685,7 @@ class ArmEnv(gym.Env):
         target_pos = self._target().copy()
         rel_pos = target_pos - ee_pos
         phase = np.array([float(self.phase)])
-        cube_speed = np.array([float(self.box_vel[0])])   # 方块沿带速度
+        cube_speed = np.array([float(self._tgt_vel()[0])])   # 方块沿带速度
         # 4+4+3+3+3+1+1 = 19，再加视觉不确定性 4 维（暂为 0）= 23
         return np.concatenate(
             [qpos, qvel, ee_pos, target_pos, rel_pos, phase, cube_speed, self.pos_std]

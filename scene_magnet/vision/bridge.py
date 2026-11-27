@@ -9,12 +9,20 @@
 """
 import time
 
+import numpy as np
+
 
 class VisionBridge:
     def __init__(self, thread, x_max=-0.10, max_age=0.5):
         self.thread = thread
         self.x_max = x_max      # 只考虑这条 x 左侧的目标（可达范围内）
         self.max_age = max_age  # 快照太旧就不外推
+
+    def mark_carried(self, xy, tol=0.05):
+        """方块被抓走后调用：对应 track 停止预测，不再参与"最前方"的选择。"""
+        tr = getattr(self.thread, "tracker", None)
+        if tr is not None:
+            tr.mark_carried(np.asarray(xy, float)[:2], tol=tol)
 
     def query(self, t_now=None, dt_extra=0.0):
         """返回 dict(xy, vel, sigma_mm, age) 或 None。"""

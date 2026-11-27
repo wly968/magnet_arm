@@ -198,7 +198,10 @@
       <geom name="cube_9_geom" type="box" size="0.025 0.025 0.025" mass="0.3" solref="0.02 1" solimp="0.9 0.95 0.001"
             material="cube" friction="1.0 0.02 0.002" condim="4" contype="0" conaffinity="0"/>
     </body>
-  </worldbody>
+  
+    <!-- 俯视相机（视觉模块与 demo 摄像头窗口共用）：覆盖整条 A 带 -->
+    <camera name="birdeye" pos="-0.45 0.65 1.40" xyaxes="1 0 0 0 1 0" fovy="60"/>
+</worldbody>
 
   <contact>
     <exclude body1="turret"   body2="shoulder"/>

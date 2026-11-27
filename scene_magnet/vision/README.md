@@ -38,6 +38,41 @@
 | `train_yolo.py` | ✅ | YOLOv8-seg 训练入口 |
 | `data.yaml` | 模板 | ultralytics 数据集配置 |
 
+## 接入环境与 demo 摄像头窗口
+
+`ArmEnv` 内置视觉开关（只影响 phase 1/2，即 model1）：
+
+```python
+from vision.detect import SegDetector
+from vision.vision_thread import VisionPipeline, VisionThread
+from vision.bridge import VisionBridge
+
+det = SegDetector("runs/segment/runs/segment/weights/best.pt",
+                  calib_path="vision/calib_yolo.npz")
+pipe = VisionPipeline(det)              # 同步：零延迟，适合快速仿真
+bridge = VisionBridge(pipe, x_max=-0.10)
+env.set_vision(bridge, enable=True)     # 观测与 IK 目标改用估计值
+```
+
+`demo.py` 已接好，并在运行时弹出一个小窗口显示俯视相机画面（带检测框与 σ）：
+
+```bash
+python demo.py                    # 视觉 + 摄像头窗口
+python demo.py --no-vision        # 回退 mocap 真值
+python demo.py --headless 60 --episodes 10   # 无窗口自检（同步管线）
+```
+
+| 模式 | 视觉管线 | 适用 |
+|---|---|---|
+| 有窗口（实时节拍） | `VisionThread`（15 Hz 异步） | 交互演示 |
+| `--headless`（快于实时） | `VisionPipeline`（同步、零延迟） | 自检/评测 |
+
+**为什么必须两种模式**：仿真跑得比实时快时，异步线程必然滞后（队列积压），
+估计会落后 0.1~0.5 s，等于 1~6 cm 的位置误差，抓取直接失败。
+
+实测（15 回合，方块池连续抓取）：视觉 **约 80%**（8/10、13/15 两轮），真值 100%。
+失败集中在 phase 2 抓取超时，主因是估计抖动量级与 3.2 cm 容差接近。
+
 ## 使用
 
 ```bash

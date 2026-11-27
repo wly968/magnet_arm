@@ -46,6 +46,7 @@ class KalmanTrack:
         self.t = float(t)
         self.n_hits = 1
         self.miss = 0
+        self.uv = None
         self.confirmed = False
         self.carried = False
 
@@ -56,7 +57,7 @@ class KalmanTrack:
         self.P = mm(mm(F, self.P), F.T) + _Q(dt, self.q)
         self.t = float(t)
 
-    def update(self, z, sigma_mm):
+    def update(self, z, sigma_mm, uv=None):
         R = np.eye(2) * (sigma_mm / 1000.0) ** 2
         H = np.array([[1, 0, 0, 0], [0, 1, 0, 0]], float)
         S = mm(mm(H, self.P), H.T) + R
@@ -66,6 +67,7 @@ class KalmanTrack:
         innov = np.asarray(z, float) - mv(H, self.x)
         self.x = self.x + mv(K, innov)
         self.P = self.P - mm(mm(K, H), self.P)
+        self.uv = None if uv is None else np.asarray(uv, float)
         self.n_hits += 1
         self.miss = 0
         if self.n_hits >= 2:
@@ -115,7 +117,8 @@ class MultiTracker:
         for d, ti, di in cands:
             if ti in used_t or di in used_d:
                 continue
-            self.tracks[ti].update(dets[di], sig[di])
+            _uv = getattr(detections[di], "uv", None)
+            self.tracks[ti].update(dets[di], sig[di], _uv)
             used_t.add(ti); used_d.add(di)
 
         for ti, tr in enumerate(self.tracks):

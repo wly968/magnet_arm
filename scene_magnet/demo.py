@@ -106,7 +106,69 @@ def apply_thresholds(env, phase, entry=False):
         env.phase_entry_steps = 6
 
 
-def run_episode(env, models, do_reset=True):
+class CameraView:
+    """俯视相机：渲染 -> 交给视觉（同步管线或线程）-> 可选小窗口显示。"""
+
+    def __init__(self, env, vision, every=2, show=False, scale=0.75, threaded=True):
+        self.env, self.thread = env, vision
+        self.threaded = threaded
+        self.every, self.show, self.scale = max(1, every), show, scale
+        self.renderer = mujoco.Renderer(env.model, 480, 640)
+        self.n = 0
+        self.last_img = None
+        self.frames = 0
+
+    def tick(self):
+        self.n += 1
+        if self.n % self.every:
+            return None
+        self.renderer.update_scene(self.env.data, camera="birdeye")
+        img = self.renderer.render()
+        self.last_img = img
+        t_now = float(self.env.data.time)
+        if self.threaded:
+            self.thread.submit(img, t_now)
+        else:
+            self.thread.step(img, t_now)      # 同步：无队列、零延迟
+        self.frames += 1
+        if self.show:
+            self.show_img(img, self.thread.snapshot())
+        return img
+
+    def show_img(self, img, st):
+        import cv2
+        vis = img.copy()
+        for o in (st.objects if st else []):
+            uv = o.get("uv")
+            if not uv:
+                continue
+            cx, cy = int(uv[0]), int(uv[1])
+            cv2.circle(vis, (cx, cy), 6, (0, 255, 0), 2)
+            cv2.putText(vis, f"#{o['id']} x={o['xy'][0]:.3f}",
+                        (cx + 8, cy - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+        if self.env.vision_pos is not None and getattr(self.env, "use_vision", False):
+            txt = f"vision ON | sigma {float(self.env.pos_std[0])*1000:.1f} mm"
+        else:
+            txt = "vision OFF"
+        cv2.putText(vis, txt, (8, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 0), 2)
+        h, w = vis.shape[:2]
+        small = cv2.resize(vis, (int(w * self.scale), int(h * self.scale)))
+        cv2.imshow("birdeye camera (q to quit)", cv2.cvtColor(small, cv2.COLOR_RGB2BGR))
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            cv2.destroyAllWindows()
+
+    def close(self):
+        try:
+            cv2.destroyAllWindows() if self.show else None
+        except Exception:
+            pass
+        try:
+            self.renderer.close()
+        except Exception:
+            pass
+
+
+def run_episode(env, models, do_reset=True, cam=None):
     """跑一个完整回合，返回 (结束 phase, 步数)。do_reset=False 时续接上一个回合。"""
     if do_reset or env.n_cubes == 1:
         obs, _ = env.reset()
@@ -124,6 +186,8 @@ def run_episode(env, models, do_reset=True):
         policy = pick_policy(models, env.phase)
         action, _ = policy.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
+        if cam is not None:
+            cam.tick()
         if terminated or truncated:
             break
     return env.phase, steps + 1
@@ -141,6 +205,14 @@ def main():
                     help="方块池大小（默认 10 个轮流投放；设 1 则每轮重新投一个）")
     ap.add_argument("--spawn-period", type=float, default=1.5,
                     help="每隔多少秒投放一个新方块（1.5 以下可保证队列里总有货，手臂不用等）")
+    ap.add_argument("--no-vision", action="store_true",
+                    help="关闭视觉（默认开启：用 YOLO 估计位置替代 mocat 真值）")
+    ap.add_argument("--weights", default=os.path.join("runs", "segment", "runs", "segment",
+                                                      "weights", "best.pt"),
+                    help="YOLO-seg 权重")
+    ap.add_argument("--calib", default=os.path.join("vision", "calib_yolo.npz"),
+                    help="与该检测器配对的标定文件")
+    ap.add_argument("--cam-every", type=int, default=2, help="每 N 个物理步渲染一帧")
     ap.add_argument("--speed", type=float, default=2.0,
                     help="仿真倍速：每个渲染帧对应 60*speed 分之一秒的睡眠")
     args = ap.parse_args()
@@ -160,17 +232,51 @@ def main():
           f"带速 {env.cube_speed:.2f} m/s")
     print(f"回原位后立即结束（不等入篮）：collect_after_place = {env.collect_after_place}")
 
+    # ---------------- 视觉 ----------------
+    cam = None
+    vision_thread = None
+    if not args.no_vision:
+        try:
+            from vision.detect import SegDetector
+            from vision.vision_thread import VisionThread
+            from vision.bridge import VisionBridge
+            if not os.path.exists(args.weights) or not os.path.exists(args.calib):
+                raise FileNotFoundError(f"缺少权重或标定：{args.weights} / {args.calib}")
+            from vision.vision_thread import VisionPipeline
+            detector = SegDetector(args.weights, calib_path=args.calib)
+            use_thread = (args.headless == 0)      # 只有开窗口（实时节拍）才用线程
+            if use_thread:
+                vision_obj = VisionThread(detector, max_hz=15)
+                vision_obj.start()
+                print("视觉模式：异步线程（15 Hz）")
+            else:
+                vision_obj = VisionPipeline(detector)
+                print("视觉模式：同步管线（零延迟）")
+            vision_thread = vision_obj
+            bridge = VisionBridge(vision_obj, x_max=-0.10)
+            env.set_vision(bridge, enable=True)
+            cam = CameraView(env, vision_obj, every=args.cam_every,
+                             show=(args.headless == 0), threaded=use_thread)
+            print(f"视觉已接入：YOLO-seg + 卡尔曼跟踪，相机每 {args.cam_every} 步一帧，最高 15 Hz")
+        except Exception as exc:
+            print(f"⚠️ 视觉不可用（{exc}），回退到 mocap 真值")
+            env.use_vision = False
+    else:
+        print("视觉已关闭（--no-vision），使用 mocap 真值")
+
     if args.headless > 0:
         t0 = time.time()
         k = 0
         while time.time() - t0 < args.headless:
-            phase, n = run_episode(env, models, do_reset=(k == 0))
+            phase, n = run_episode(env, models, do_reset=(k == 0), cam=cam)
             k += 1
             print(f"  [{k}] phase {phase} | {n} 步 | {time.time()-t0:.1f}s")
             if args.episodes and k >= args.episodes:
                 break
             time.sleep(args.interval)
-        print(f"自检完成：{k} 个回合")
+        print(f"自检完成：{k} 个回合 | 相机帧 {cam.frames if cam else 0}")
+        if vision_thread is not None:
+            vision_thread.stop()
         return
 
     with mujoco.viewer.launch_passive(env.model, env.data,
@@ -195,6 +301,8 @@ def main():
             obs, reward, terminated, truncated, info = env.step(action)
             episode_reward += reward
             step_count += 1
+            if cam is not None:
+                cam.tick()
             viewer.sync()
             time.sleep(1.0 / (60.0 * max(0.1, args.speed)))
 
@@ -205,6 +313,8 @@ def main():
                 # 停顿几秒（方块此刻还在 B 带上滑向篮子），然后掉下一个
                 t_end = time.time() + args.interval
                 while viewer.is_running() and time.time() < t_end:
+                    if cam is not None:
+                        cam.tick()
                     viewer.sync()
                     time.sleep(1 / 60)
                 if args.episodes and k >= args.episodes:

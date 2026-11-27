@@ -28,13 +28,46 @@ class VisionState:
         return max(objs, key=lambda o: o["xy"][0])
 
 
+class VisionPipeline:
+    """同步视觉管线：检测 -> 跟踪 -> 快照。没有线程、没有队列，零延迟。
+
+    适合"仿真比实时快"的场合（headless 自检）：时间戳直接用仿真时间，
+    不存在队列积压导致的估计滞后。
+    """
+
+    def __init__(self, detector, tracker=None):
+        self.detector = detector
+        self.tracker = tracker or MultiTracker()
+        self._state = VisionState()
+        self.n_frames = 0
+        self.n_dets = 0
+
+    def step(self, img, t_capture):
+        t0 = time.time()
+        dets = self.detector.detect(img)
+        self.tracker.step(dets, float(t_capture))
+        objs = [{"id": tr.id, "xy": tr.pos.tolist(), "vel": tr.vel.tolist(),
+                 "sigma_mm": tr.sigma_mm, "conf": 1.0,
+                 "uv": None if getattr(tr, "uv", None) is None else tr.uv.tolist()}
+                for tr in self.tracker.active()]
+        self._state = VisionState(t_capture=float(t_capture), t_processed=time.time(),
+                                  objects=objs)
+        self.n_frames += 1
+        self.n_dets += len(dets)
+        return self._state, (time.time() - t0)
+
+    def snapshot(self):
+        return self._state
+
+
 class VisionThread(threading.Thread):
-    """10~15 Hz 视觉流水线。用 submit() 投帧，snapshot() 取最新结果。"""
+    """异步包装：主线程 submit() 投帧，本线程跑 VisionPipeline。"""
 
     def __init__(self, detector, max_hz=12.0, tracker=None, daemon=True):
         super().__init__(daemon=daemon)
+        self.pipeline = VisionPipeline(detector, tracker)
         self.detector = detector
-        self.tracker = tracker or MultiTracker()
+        self.tracker = self.pipeline.tracker
         self.min_dt = 1.0 / float(max_hz)
         self._q = queue.Queue(maxsize=4)
         self._lock = threading.Lock()
@@ -45,10 +78,19 @@ class VisionThread(threading.Thread):
 
     # 主线程调用
     def submit(self, img, t_capture):
+        """投递一帧。队列满时**丢弃最旧的**，保证线程处理的永远是最新画面。"""
+        item = (np.asarray(img), float(t_capture))
         try:
-            self._q.put_nowait((np.asarray(img), float(t_capture)))
+            self._q.put_nowait(item)
         except queue.Full:
-            pass                       # 丢旧帧，保证实时
+            try:
+                self._q.get_nowait()   # 扔掉最旧的一帧
+            except queue.Empty:
+                pass
+            try:
+                self._q.put_nowait(item)
+            except queue.Full:
+                pass
 
     def snapshot(self):
         with self._lock:
@@ -56,19 +98,12 @@ class VisionThread(threading.Thread):
 
     def process(self, img, t_capture):
         """同步处理一帧（测试用，也可被 run() 调用）。"""
-        t0 = time.time()
-        dets = self.detector.detect(img)
-        self.tracker.step(dets, t_capture)
-        objs = [{"id": tr.id, "xy": tr.pos.tolist(), "vel": tr.vel.tolist(),
-                 "sigma_mm": tr.sigma_mm, "conf": 1.0}
-                for tr in self.tracker.active()]
-        st = VisionState(t_capture=t_capture, t_processed=time.time(),
-                         objects=objs)
+        st, dt = self.pipeline.step(img, t_capture)
         with self._lock:
             self._state = st
-        self.n_frames += 1
-        self.n_dets += len(dets)
-        return st, (time.time() - t0)
+        self.n_frames = self.pipeline.n_frames
+        self.n_dets = self.pipeline.n_dets
+        return st, dt
 
     def run(self):
         last = 0.0
