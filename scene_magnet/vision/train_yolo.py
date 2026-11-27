@@ -39,8 +39,21 @@ def _patch_pool():
     # 本机 numpy 的 BLAS 会硬崩（0xc06d007f），无法逐一打补丁 —— 训练前必须先修好 numpy。
 
 
+def _pick_device(device=None):
+    """device=None 时自动选：有 GPU 用 GPU(0)，否则 CPU。"""
+    if device not in (None, "auto"):
+        return device
+    try:
+        import torch
+        return "0" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        return "cpu"
+
+
 def train(data, model="yolov8n-seg.pt", epochs=60, imgsz=640, batch=8,
-          device="cpu", project="runs", name="segment"):
+          device=None, project="runs", name="segment"):
+    device = _pick_device(device)
+    print(f"[train_yolo] 设备: {device}")
     _patch_pool()
     from ultralytics import YOLO
     try:
@@ -64,6 +77,6 @@ if __name__ == "__main__":
     ap.add_argument("--epochs", type=int, default=60)
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--batch", type=int, default=8)
-    ap.add_argument("--device", default="cpu")
+    ap.add_argument("--device", default=None, help="None=自动选 GPU，或 cpu / 0")
     a = ap.parse_args()
     train(a.data, a.model, a.epochs, a.imgsz, a.batch, a.device)

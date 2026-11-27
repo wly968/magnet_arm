@@ -33,7 +33,7 @@ def detect_red_centroid(img):
     return np.array([xs.mean(), ys.mean()]), int(mask.sum())
 
 
-def calibrate(width=640, height=480, verbose=True, save=True):
+def calibrate(width=640, height=480, verbose=True, save=True, detector=None, out=None):
     cam = Camera(width=width, height=height)
     m, d = cam.model, cam.data
 
@@ -54,8 +54,15 @@ def calibrate(width=640, height=480, verbose=True, save=True):
         for y in ys:
             d.mocap_pos[mid] = [x, y, PLANE_Z]
             mujoco.mj_forward(m, d)
-            uv_proj = cam.project_point([x, y, TOP_Z])   # 顶面
-            uv_det, area = detect_red_centroid(cam.render())
+            uv_proj = cam.project_point([x, y, PLANE_Z])
+            frame = cam.render()
+            if detector is None:
+                uv_det, area = detect_red_centroid(frame)
+            else:
+                ds = detector.detect(frame)
+                if not ds:
+                    continue
+                uv_det, area = ds[0].uv, ds[0].area
             if uv_proj is None or uv_det is None or area < 20:
                 continue
             pixels.append(uv_det)   # 用检测质心拟合，吸收轮廓偏移
@@ -75,7 +82,7 @@ def calibrate(width=640, height=480, verbose=True, save=True):
         errs.append(float(np.linalg.norm(xy - [x, y])))
 
     if save:
-        np.savez(CALIB_PATH, H=cam.H, H_inv=cam.H_inv,
+        np.savez(out or CALIB_PATH, H=cam.H, H_inv=cam.H_inv,
                  width=width, height=height, plane_z=PLANE_Z)
     if verbose:
         print(f"[calibrate] 有效采样点 {len(pixels)} 个")
@@ -84,15 +91,16 @@ def calibrate(width=640, height=480, verbose=True, save=True):
         print(f"[calibrate] 单应往返误差：中位 {1000*np.median(errs):.3f} mm，"
               f"最大 {1000*np.max(errs):.3f} mm")
         if save:
-            print(f"[calibrate] 已保存 {CALIB_PATH}")
+            print(f"[calibrate] 已保存 {out or CALIB_PATH}")
     return cam, {"pixel_residual": residual, "world_error_mm": np.array(errs) * 1000.0}
 
 
-def load_calibration():
-    """读回标定：返回 (H, H_inv, meta)。"""
-    if not os.path.exists(CALIB_PATH):
-        raise FileNotFoundError(f"没有标定文件：{CALIB_PATH}，先跑 python -m vision.calibrate")
-    z = np.load(CALIB_PATH)
+def load_calibration(path=None):
+    """读回标定：返回 (H, H_inv, meta)。path 可指定不同检测器的标定文件。"""
+    path = path or CALIB_PATH
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"没有标定文件：{path}，先跑 python -m vision.calibrate")
+    z = np.load(path)
     return z["H"], z["H_inv"], {
         "width": int(z["width"]), "height": int(z["height"]),
         "plane_z": float(z["plane_z"]),

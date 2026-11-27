@@ -47,3 +47,5 @@ scene_magnet/vision/calib.npz
 scene_magnet/runs/
 scene_magnet/vision/raw/
 
+scene_magnet/vision/calib_*.npz
+

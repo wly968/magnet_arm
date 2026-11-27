@@ -31,8 +31,11 @@ def mm_per_px(H, uv=(320.0, 240.0), eps=4.0):
 class _Calib:
     """标定包装：像素 -> 世界。"""
 
-    def __init__(self, calib=None):
-        H, H_inv, meta = load_calibration() if calib is None else calib
+    def __init__(self, calib=None, calib_path=None):
+        if calib is None:
+            H, H_inv, meta = load_calibration(calib_path)
+        else:
+            H, H_inv, meta = calib
         self.H, self.H_inv, self.meta = H, H_inv, meta
         self.mm_per_px = mm_per_px(H)
 
@@ -50,8 +53,8 @@ def _sigma_from_area(area, mmpp):
 class ColorDetector:
     """HSV/颜色阈值 + 连通域基线：不训练也能跑通全链路。"""
 
-    def __init__(self, calib=None, min_area=40, max_area=6000):
-        self.cal = _Calib(calib)
+    def __init__(self, calib=None, min_area=40, max_area=6000, calib_path=None):
+        self.cal = _Calib(calib, calib_path)
         self.min_area, self.max_area = int(min_area), int(max_area)
 
     def detect(self, img):
@@ -75,14 +78,32 @@ class ColorDetector:
 class SegDetector:
     """YOLOv8-seg：实例掩码 -> 质心 -> 世界坐标（取质心，不用框中心）。"""
 
-    def __init__(self, weights, calib=None, conf=0.25, device="cpu"):
+    def __init__(self, weights, calib=None, conf=0.25, device="cpu",
+                 retina=True, refine="color", calib_path=None):
+        """refine:
+        - None    : 直接用掩码质心（边界粗，误差约 4~5 mm）
+        - "color" : 在掩码覆盖区域内做颜色质心（亚像素，误差约 1 mm）
+        retina: 用全分辨率掩码（retina_masks），边界更细。
+        """
         from ultralytics import YOLO
         self.model = YOLO(weights)
         self.conf, self.device = conf, device
-        self.cal = _Calib(calib)
+        self.retina, self.refine = retina, refine
+        self.cal = _Calib(calib, calib_path)
+
+    def _refine_uv(self, img, mask, uv0):
+        """在掩码区域内用颜色重新求质心（把边界误差换成亚像素质心）。"""
+        rgb = img.astype(np.float64)
+        r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+        red = (r > 90) & (r > 1.6 * g) & (r > 1.6 * b) & (mask > 0.5)
+        ys, xs = np.nonzero(red)
+        if len(xs) < 20:
+            return uv0
+        return np.array([xs.mean(), ys.mean()])
 
     def detect(self, img):
-        res = self.model.predict(img, conf=self.conf, device=self.device, verbose=False)[0]
+        res = self.model.predict(img, conf=self.conf, device=self.device,
+                                 retina_masks=self.retina, verbose=False)[0]
         out = []
         if res.masks is None:
             return out
@@ -95,6 +116,8 @@ class SegDetector:
             if len(xs) < 20:
                 continue
             uv = np.array([xs.mean(), ys.mean()])
+            if self.refine == "color":
+                uv = self._refine_uv(img, m, uv)
             out.append(Detection(xy=self.cal.to_world(uv), uv=uv, conf=float(confs[k]),
                                  area=int(len(xs)),
                                  sigma_mm=_sigma_from_area(len(xs), self.cal.mm_per_px),
