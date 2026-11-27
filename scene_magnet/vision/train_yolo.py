@@ -51,7 +51,7 @@ def _pick_device(device=None):
 
 
 def train(data, model="yolov8n-seg.pt", epochs=60, imgsz=640, batch=8,
-          device=None, project="runs", name="segment"):
+          device=None, project="runs", name="segment", workers=4, cache=False):
     device = _pick_device(device)
     print(f"[train_yolo] 设备: {device}")
     _patch_pool()
@@ -61,10 +61,18 @@ def train(data, model="yolov8n-seg.pt", epochs=60, imgsz=640, batch=8,
     except Exception as exc:
         print(f"[train_yolo] 预训练权重不可用（{exc}），改为从结构文件训练")
         net = YOLO(model.replace(".pt", ".yaml"))
-    # workers=0：本机沙箱禁止子进程管道（WinError 5），数据加载必须留在主进程
-    res = net.train(data=data, epochs=epochs, imgsz=imgsz, batch=batch,
-                    device=device, workers=0, project=project, name=name,
-                    exist_ok=True, plots=False, mosaic=0.0)
+    # workers>0 能显著提高 GPU 利用率（之前沙箱禁止管道所以只能 0）
+    try:
+        res = net.train(data=data, epochs=epochs, imgsz=imgsz, batch=batch,
+                        device=device, workers=workers, cache=cache,
+                        project=project, name=name, exist_ok=True, plots=False,
+                        mosaic=0.0)
+    except (PermissionError, OSError) as exc:
+        print(f"[train_yolo] workers={workers} 不可用（{exc}），回退 workers=0")
+        res = net.train(data=data, epochs=epochs, imgsz=imgsz, batch=batch,
+                        device=device, workers=0, cache=cache,
+                        project=project, name=name, exist_ok=True, plots=False,
+                        mosaic=0.0)
     best = os.path.join(project, name, "weights", "best.pt")
     print("[train_yolo] 完成，权重：", best)
     return res, best
@@ -78,5 +86,8 @@ if __name__ == "__main__":
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--device", default=None, help="None=自动选 GPU，或 cpu / 0")
+    ap.add_argument("--workers", type=int, default=4, help="dataloader 子进程数（0=主进程）")
+    ap.add_argument("--cache", action="store_true", help="把图像缓存到内存，省掉重复读盘")
     a = ap.parse_args()
-    train(a.data, a.model, a.epochs, a.imgsz, a.batch, a.device)
+    train(a.data, a.model, a.epochs, a.imgsz, a.batch, a.device,
+          workers=a.workers, cache=a.cache)

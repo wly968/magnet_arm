@@ -554,8 +554,8 @@ class ArmEnv(gym.Env):
                     and arm_ready):
                 reward += 10.0
                 self.phase = 1
-                if self.vision is not None and hasattr(self.vision, "lock_front"):
-                    self.vision.lock_front()   # 锁定这个方块，直到抓走
+                if self.vision is not None and hasattr(self.vision, "lock_nearest"):
+                    self.vision.lock_nearest(self.box_pos)   # 锁定"当前要抓"的那个方块
                 info["final_phase"] = 1
                 return self._get_obs(), reward, False, truncated, info
 

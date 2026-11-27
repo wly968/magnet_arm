@@ -25,6 +25,21 @@ class VisionBridge:
         self.locked_id = None if obj is None else obj["id"]
         return self.locked_id
 
+    def lock_nearest(self, xy, tol=0.08):
+        """按已知位置锁定最近的 track（用于与环境"当前要抓的方块"对齐）。"""
+        st = self.thread.snapshot()
+        if st is None or not st.objects:
+            self.locked_id = None
+            return None
+        xy = np.asarray(xy, float)[:2]
+        best, bid = tol, None
+        for o in st.objects:
+            d = float(np.hypot(o["xy"][0] - xy[0], o["xy"][1] - xy[1]))
+            if d < best:
+                best, bid = d, o["id"]
+        self.locked_id = bid
+        return bid
+
     def unlock(self):
         self.locked_id = None
 
