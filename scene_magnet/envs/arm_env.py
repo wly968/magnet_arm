@@ -117,7 +117,7 @@ class ArmEnv(gym.Env):
         self.smooth_alpha = 0.0      # >0 时对动作做低通滤波，抑制“勾一下”
         # IK 基准 + RL 残差（phase 1/2）
         self.ik_phases = (1, 2)
-        self.ik_scale = 0.02         # 残差尺度 rad/单位动作（末端约 5 mm/步）
+        self.ik_scale = 0.008      # 与精调训练一致（phase 1/2 的残差尺度）         # 残差尺度 rad/单位动作（末端约 5 mm/步）
         self.ik_iters = 15
         self.use_rel_criterion = False  # 磁吸用运动学吸附，不把相对速度当判据
         self.still_decay = 999          # dwell 失败时 still_count 的衰减量（999=直接清零）
@@ -228,13 +228,21 @@ class ArmEnv(gym.Env):
             self.vision.observe(self.box_pos, self.box_vel, dt)
         q = self.vision.query(float(self.data.time))
         if q is not None:
+            self._vis_lost = 0
             self.vision_pos = np.array([q["xy"][0], q["xy"][1], float(self.box_pos[2])])
             self.vision_vel = np.array([q["vel"][0], q["vel"][1], 0.0])
             sigma = float(q["sigma_mm"]) / 1000.0
             self.pos_std[:] = [sigma, sigma, 0.02, 0.0]
         else:
-            self.vision_pos[:2] += self.vision_vel[:2] * dt
-            self.pos_std[:2] = np.minimum(self.pos_std[:2] * 1.2 + 0.0005, 0.05)
+            # 丢失检测：限速外推（速度衰减 + 位移上限），避免"追幻影"
+            if not hasattr(self, "_vis_lost"):
+                self._vis_lost = 0
+            self._vis_lost += 1
+            self.vision_vel[:2] *= 0.9
+            step = self.vision_vel[:2] * dt
+            if self._vis_lost < 5:                 # 前 5 帧允许外推
+                self.vision_pos[:2] += step
+            self.pos_std[:2] = np.minimum(self.pos_std[:2] * 1.2 + 0.001, 0.05)
 
     def _gravity_ff(self, q_ref):
         """把目标构型下的重力/科氏力矩换算成位置伺服的指令偏置：ctrl = q_ref + tau/kp。"""

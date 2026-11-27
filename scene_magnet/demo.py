@@ -27,16 +27,17 @@ from envs.arm_env import ArmEnv
 
 # ---- 接力用的阈值（与 test.py 一致）----
 TH_PHASE1 = (0.045, 0.950, 0)
-TH_PHASE2 = (0.032, 0.960, 1)
+TH_PHASE2 = (0.014, 0.992, 15)          # 抓取（真值模式）：与精调 model1 的训练目标一致
+TH_PHASE2_VISION = (0.020, 0.980, 4)    # 抓取（视觉模式）：有 1~2 mm 估计噪声，验收略放宽
 TH_PHASE35 = (0.034, 0.965, 2)
-VISION_TOL_SCALE = 1.25
+VISION_TOL_SCALE = 1.0    # 精调模型按 1.4cm/0.992/15 训练，无需放宽
 TH_PHASE6 = (0.060, 0.940, 0)
 
 # 方块在 A 带最左端的刷新区间（带 A 覆盖 x∈[-1.20, 0.30]）
 SPAWN_X = (-1.180, -1.050)
 
 CANDIDATES = {
-    "model1": ["saves/phase1-2.zip"],
+    "model1": ["saves/phase1-2-vision.zip", "saves/phase1-2.zip"],  # 视觉鲁棒版优先
     "model2": ["saves/phase3-5.zip"],
     "model3": ["saves/phase6.zip"],
 }
@@ -102,6 +103,7 @@ def apply_thresholds(env, phase, entry=False):
         d, a, s = TH_PHASE6
     # 视觉模式引入 1~2 mm 估计误差，抓取容差按 VISION_TOL_SCALE 放宽（phase 2 最敏感）
     if getattr(env, "use_vision", False) and phase == 2:
+        d, a, s = TH_PHASE2_VISION          # 视觉模式换一套验收标准
         d = d * VISION_TOL_SCALE
     env._set_dist(d)
     env._set_angle1(a)
@@ -217,8 +219,8 @@ def main():
     ap.add_argument("--calib", default=os.path.join("vision", "calib_yolo.npz"),
                     help="与该检测器配对的标定文件")
     ap.add_argument("--cam-every", type=int, default=2, help="每 N 个物理步渲染一帧")
-    ap.add_argument("--vision-tol", type=float, default=1.25,
-                    help="视觉模式下抓取容差的放宽倍数（默认 1.25）")
+    ap.add_argument("--vision-tol", type=float, default=1.0,
+                    help="视觉模式下抓取容差的放宽倍数（默认 1.0=不放宽）")
     ap.add_argument("--speed", type=float, default=2.0,
                     help="仿真倍速：每个渲染帧对应 60*speed 分之一秒的睡眠")
     args = ap.parse_args()
