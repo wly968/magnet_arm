@@ -17,6 +17,30 @@ class VisionBridge:
         self.thread = thread
         self.x_max = x_max      # 只考虑这条 x 左侧的目标（可达范围内）
         self.max_age = max_age  # 快照太旧就不外推
+        self.locked_id = None   # 锁定某个 track（进入 phase 1 时锁定，抓完解锁）
+
+    def lock_front(self, t_now=None):
+        """锁定当前最前方的目标，之后 query() 一直返回它（避免方块排队时串目标）。"""
+        obj = self._pick(t_now)
+        self.locked_id = None if obj is None else obj["id"]
+        return self.locked_id
+
+    def unlock(self):
+        self.locked_id = None
+
+    def _pick(self, t_now=None):
+        st = self.thread.snapshot()
+        if st is None or not st.objects:
+            return None
+        if self.locked_id is not None:
+            for o in st.objects:
+                if o["id"] == self.locked_id:
+                    return o
+            return None                  # 锁定的目标丢了，交给上层决定
+        objs = [o for o in st.objects if o["xy"][0] <= self.x_max]
+        if not objs:
+            return None
+        return max(objs, key=lambda o: o["xy"][0])
 
     def mark_carried(self, xy, tol=0.05):
         """方块被抓走后调用：对应 track 停止预测，不再参与"最前方"的选择。"""
@@ -33,7 +57,7 @@ class VisionBridge:
         age = max(0.0, t_now - st.t_capture) + dt_extra
         if age > self.max_age:
             return None
-        obj = st.front(x_max=self.x_max)
+        obj = self._pick(t_now)
         if obj is None:
             return None
         xy = [obj["xy"][0] + obj["vel"][0] * age,

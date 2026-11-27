@@ -36,6 +36,33 @@ def random_layout(scene, rng, n_min=1, n_max=6):
     return pts
 
 
+def augment_image(img, rng, strength=1.0):
+    """图像级域随机化：色偏、运动模糊、噪声、亮度/对比度。不改变几何，标签仍有效。"""
+    out = img.astype(np.float32)
+    # 1) 通道增益（模拟不同色温/白平衡）
+    gain = 1.0 + strength * rng.uniform(-0.18, 0.18, 3)
+    out *= gain.reshape(1, 1, 3)
+    # 2) 亮度/对比度
+    out = (out - 128.0) * (1.0 + strength * rng.uniform(-0.25, 0.25)) + 128.0
+    out += strength * rng.uniform(-25, 25)
+    # 3) 运动模糊（沿 x，方块在带上运动）
+    if rng.random() < 0.6:
+        k = int(rng.integers(3, 9))
+        kernel = np.zeros((k, k), np.float32)
+        kernel[k // 2, :] = 1.0 / k
+        out = cv2.filter2D(out, -1, kernel)
+    # 4) 高斯噪声
+    out += rng.normal(0, strength * rng.uniform(1.0, 5.0), out.shape)
+    # 5) 偶发 JPEG 压缩
+    if rng.random() < 0.3:
+        q = int(rng.integers(55, 95))
+        ok, buf = cv2.imencode(".jpg", np.clip(out, 0, 255).astype(np.uint8),
+                               [int(cv2.IMWRITE_JPEG_QUALITY), q])
+        if ok:
+            out = cv2.imdecode(buf, cv2.IMREAD_COLOR)[..., :3].astype(np.float32)
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
 def write_label(path, polys, w, h):
     lines = []
     for poly in polys:
@@ -61,6 +88,7 @@ def build_dataset(n_images=400, out="dataset", val_ratio=0.2, verbose=True):
         scene.set_lighting(level, rng)
         scene.place_cubes(random_layout(scene, rng))
         img = scene.render()
+        img = augment_image(img, rng, strength=0.4 + 0.6 * (level / 3.0))
         polys = [cube_top_polygon(scene.cam, x, y) for x, y in scene.cube_positions()]
         stem = f"{i:05d}"
         cv2.imwrite(os.path.join(out, f"images/{split}/{stem}.png"),

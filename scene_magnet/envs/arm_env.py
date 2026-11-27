@@ -224,6 +224,8 @@ class ArmEnv(gym.Env):
         注意：时间戳一律用仿真时间 data.time。仿真可能比实时快很多，
         若用 time.time() 会和视觉线程的采样时刻对不上（曾导致退回 phase 4）。
         """
+        if hasattr(self.vision, "observe"):
+            self.vision.observe(self.box_pos, self.box_vel, dt)
         q = self.vision.query(float(self.data.time))
         if q is not None:
             self.vision_pos = np.array([q["xy"][0], q["xy"][1], float(self.box_pos[2])])
@@ -544,6 +546,8 @@ class ArmEnv(gym.Env):
                     and arm_ready):
                 reward += 10.0
                 self.phase = 1
+                if self.vision is not None and hasattr(self.vision, "lock_front"):
+                    self.vision.lock_front()   # 锁定这个方块，直到抓走
                 info["final_phase"] = 1
                 return self._get_obs(), reward, False, truncated, info
 
