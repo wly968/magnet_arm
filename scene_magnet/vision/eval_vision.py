@@ -60,6 +60,32 @@ def bench(detector, scene=None, n=40, levels=(0, 1, 2, 3), seed=0, verbose=True)
     return out
 
 
+def bench_with_arm(detector, n=20, seed=0, verbose=True):
+    """手臂出现在视野内时的精度（真实部署条件，比干净画面难得多）。"""
+    from .dataset import ArmScene, random_layout
+    scene = ArmScene()
+    rng = np.random.default_rng(seed)
+    errs, n_ok, n_truth = [], 0, 0
+    for _ in range(n):
+        scene.set_lighting(int(rng.integers(0, 4)), rng)
+        scene.place_cubes(random_layout(scene, rng))
+        scene.randomize_arm(rng)
+        dets = detector.detect(scene.render())
+        e, m = match_errors(dets, scene.cube_positions())
+        errs += e
+        n_ok += m
+        n_truth += len(scene.cube_positions())
+    rec = {"pos_med_mm": float(np.median(errs)) if errs else float("nan"),
+           "pos_p95_mm": float(np.percentile(errs, 95)) if errs else float("nan"),
+           "pos_max_mm": float(np.max(errs)) if errs else float("nan"),
+           "recall": n_ok / max(n_truth, 1)}
+    if verbose:
+        print(f"  含机械臂：位置误差 中位 {rec['pos_med_mm']:.2f} mm / "
+              f"95% {rec['pos_p95_mm']:.2f} mm / 最大 {rec['pos_max_mm']:.2f} mm | "
+              f"召回 {rec['recall']:.0%}")
+    return rec
+
+
 def bench_tracking(scene=None, detector=None, fps=12.0, steps=60, seed=1, verbose=True):
     """模拟带速 0.12 m/s，中途遮挡 0.3 s，测跟踪误差。"""
     from .tracker import MultiTracker
@@ -106,4 +132,5 @@ if __name__ == "__main__":
         det = ColorDetector()
         print("[eval] 颜色基线")
     bench(det, n=a.n)
+    bench_with_arm(det, n=max(10, a.n // 2))
     bench_tracking(detector=det)

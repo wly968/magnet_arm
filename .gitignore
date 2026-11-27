@@ -49,3 +49,11 @@ scene_magnet/vision/raw/
 
 scene_magnet/vision/calib_*.npz
 
+
+# 训练产物与数据集（体积大，可再生成）
+scene_magnet/vision/dataset*/
+scene_magnet/*.pt
+scene_magnet/vision/*.pt
+scene_magnet/weights/
+*.pt
+

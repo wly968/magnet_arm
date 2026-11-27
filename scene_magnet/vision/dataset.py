@@ -11,17 +11,74 @@ import os
 import cv2
 import numpy as np
 
-from .camera import TOP_Z
-from .scene import VisionScene
+from .camera import TOP_Z, project_with_model
 
 HALF = 0.025          # 方块半边长
 
 
+class ArmScene:
+    """用真正的 ArmEnv（带机械臂）当渲染场景：手臂、阴影、遮挡都会出现在训练图里。"""
+
+    def __init__(self, width=640, height=480, arm_motion=True):
+        import mujoco
+
+        from envs.arm_env import ArmEnv
+        self.env = ArmEnv()
+        self.model, self.data = self.env.model, self.env.data
+        self.m, self.d = self.model, self.data      # 兼容 VisionScene.set_lighting
+        self.cam_id = self.model.camera("birdeye").id
+        self.width, self.height = width, height
+        self.renderer = mujoco.Renderer(self.model, height, width)
+        self.arm_motion = arm_motion
+        self.home = self.data.qpos[self.env.arm_qpos_adr].copy()
+        self._park_all()
+
+    def _park_all(self):
+        import mujoco
+        for i in range(10):
+            try:
+                mid = int(self.model.body_mocapid[self.model.body(f"cube_{i}").id])
+            except Exception:
+                break
+            self.data.mocap_pos[mid] = [0.0, 0.0, -5.0]
+        mujoco.mj_forward(self.model, self.data)
+
+    def place_cubes(self, positions):
+        import mujoco
+        self._park_all()
+        for i, (x, y) in enumerate(positions[:10]):
+            mid = int(self.model.body_mocapid[self.model.body(f"cube_{i}").id])
+            self.data.mocap_pos[mid] = [float(x), float(y), 0.375]
+        self.placed = [(float(x), float(y)) for x, y in positions[:10]]
+        mujoco.mj_forward(self.model, self.data)
+
+    def cube_positions(self):
+        return list(self.placed)
+
+    def randomize_arm(self, rng):
+        """手臂随机位姿：既可能悬在带上方，也可能正压在方块附近。"""
+        import mujoco
+        q = self.home + rng.normal(0, 0.45, 4)
+        self.data.qpos[self.env.arm_qpos_adr] = q
+        mujoco.mj_forward(self.model, self.data)
+
+    def set_lighting(self, level=0, rng=None):
+        from .scene import VisionScene
+        VisionScene.set_lighting(self, level, rng)      # 复用同一套光照随机化
+
+    def render(self):
+        self.renderer.update_scene(self.data, camera=self.cam_id)
+        return self.renderer.render()
+
+
 def cube_top_polygon(cam, x, y):
-    """顶面四角 -> 像素多边形（按顺时针）。"""
+    """顶面四角 -> 像素多边形（按顺时针）。cam 可以是 Camera 或 ArmScene。"""
     pts = [(x - HALF, y - HALF), (x + HALF, y - HALF),
            (x + HALF, y + HALF), (x - HALF, y + HALF)]
-    return [cam.project_point([px, py, TOP_Z]) for px, py in pts]
+    if hasattr(cam, "project_point"):
+        return [cam.project_point([px, py, TOP_Z]) for px, py in pts]
+    return [project_with_model(cam.model, cam.cam_id, cam.width, cam.height, [px, py, TOP_Z])
+            for px, py in pts]
 
 
 def random_layout(scene, rng, n_min=1, n_max=6):
@@ -76,8 +133,12 @@ def write_label(path, polys, w, h):
         f.write("\n".join(lines))
 
 
-def build_dataset(n_images=400, out="dataset", val_ratio=0.2, verbose=True):
-    scene = VisionScene()
+def build_dataset(n_images=400, out="dataset", val_ratio=0.2, verbose=True, with_arm=True):
+    if with_arm:
+        scene = ArmScene()
+    else:
+        from .scene import VisionScene
+        scene = VisionScene()
     rng = np.random.default_rng(0)
     for sub in ("images/train", "images/val", "labels/train", "labels/val"):
         os.makedirs(os.path.join(out, sub), exist_ok=True)
@@ -87,14 +148,18 @@ def build_dataset(n_images=400, out="dataset", val_ratio=0.2, verbose=True):
         level = int(rng.integers(0, 4))
         scene.set_lighting(level, rng)
         scene.place_cubes(random_layout(scene, rng))
+        if with_arm and hasattr(scene, "randomize_arm"):
+            scene.randomize_arm(rng)
         img = scene.render()
         img = augment_image(img, rng, strength=0.4 + 0.6 * (level / 3.0))
-        polys = [cube_top_polygon(scene.cam, x, y) for x, y in scene.cube_positions()]
+        polys = [cube_top_polygon(getattr(scene, "cam", scene), x, y)
+                 for x, y in scene.cube_positions()]
         stem = f"{i:05d}"
         cv2.imwrite(os.path.join(out, f"images/{split}/{stem}.png"),
                     cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-        write_label(os.path.join(out, f"labels/{split}/{stem}.txt"), polys,
-                    scene.cam.width, scene.cam.height)
+        _w = getattr(getattr(scene, "cam", scene), "width", 640)
+        _h = getattr(getattr(scene, "cam", scene), "height", 480)
+        write_label(os.path.join(out, f"labels/{split}/{stem}.txt"), polys, _w, _h)
         if verbose and i % 50 == 0:
             print(f"  [{i}/{n_images}] level={level} cubes={len(polys)}")
     with open(os.path.join(out, "data.yaml"), "w", encoding="utf-8") as f:

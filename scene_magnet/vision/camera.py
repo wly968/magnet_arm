@@ -67,6 +67,20 @@ def inv3(M):
     ]) / det
 
 
+def project_with_model(model, cam_id, width, height, world_xyz):
+    """用任意 MjModel 的相机参数做解析投影（供 ArmScene 复用）。"""
+    pos = np.asarray(model.cam_pos[cam_id], dtype=np.float64)
+    R = np.asarray(model.cam_mat0[cam_id], dtype=np.float64).reshape(3, 3)
+    p = np.einsum("ji,j->i", R, np.asarray(world_xyz, dtype=np.float64) - pos)
+    z = -p[2]
+    if z <= 1e-6:
+        return None
+    f = 1.0 / np.tan(np.radians(float(model.cam_fovy[cam_id])) * 0.5)
+    aspect = width / height
+    return np.array([((f * p[0] / z) / aspect + 1.0) * 0.5 * width,
+                     (1.0 - (f * p[1] / z)) * 0.5 * height])
+
+
 class Camera:
     """离屏渲染 + 像素/世界坐标互转。"""
 
